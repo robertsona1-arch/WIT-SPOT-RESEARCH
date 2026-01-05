@@ -1,0 +1,6 @@
+All files ran in this folder must have: 
+
+import bosdyn.client.util
+# ...
+parser = bosdyn.client.util.get_common_cli_parser() 
+options = parser.parse_args(argv)

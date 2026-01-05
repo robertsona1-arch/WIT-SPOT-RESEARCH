@@ -1,0 +1,18 @@
+# --- 1. Python Junk ---
+__pycache__/
+*.py[cod]
+
+# --- 2. Virtual Environments ---
+spot-env/
+venv/
+env/
+
+# --- 3. Editor Settings ---
+.vscode/
+.idea/
+.DS_Store
+
+# --- 4. Security (CRITICAL) ---
+# Any file that contains passwords
+credentials.py
+secrets.py
