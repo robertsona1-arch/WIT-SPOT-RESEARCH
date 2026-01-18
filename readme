@@ -1,4 +1,4 @@
-All files ran in this folder must have: 
+All files ran in this folder must have: (only if using the launch configs)
 
 import bosdyn.client.util
 # ...
