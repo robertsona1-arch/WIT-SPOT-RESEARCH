@@ -1,6 +1,6 @@
 """
-map_record.py
-Usage: python3 mission_follower.y <ROBOT_IP> --username <USER> --password <REDACTED> --map-dur ./my_lab_map
+mission_follower.py
+Usage: python3 mission_follower.py <ROBOT_IP> --username <USER> --password <REDACTED> --map-dir ./my_lab_map
 This script records a map, then downloads to a user specified folder
 This script requires the user to walk the robot around the area to be mapped
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED

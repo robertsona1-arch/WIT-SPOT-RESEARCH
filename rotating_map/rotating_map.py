@@ -1,0 +1,194 @@
+"""
+rotating_map.py
+python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N>
+This script records a map with the robot making N turns
+It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
+THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
+This script pulls significant portions of code from the Boston Dynamics Graph Nav Example & Recording Example
+Minimal AI was used to aid in syntax and structure
+"""
+
+
+"""
+Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
+WIT SPOT Research Group
+Prof. Latif 
+Contributors: Patrick Woolf, Geoffery Siebert
+Date Created: 1/26/2026
+Last Updated: 1/26/2026
+"""
+
+import sys
+import os
+import math
+import argparse
+import struct
+import time
+import bosdyn.client
+import bosdyn.client.util
+from bosdyn.client.robot import Robot
+from bosdyn.client.map_processing import MapProcessingServiceClient #check this
+from bosdyn.client.graph_nav import GraphNavRecordingClient, GraphNavClient
+from bosdyn.client.lease import LeaseKeepAlive
+from bosdyn.client.robot_command import RobotCommandClient, blocking_stand, MobilityParams, RobotCommandBuilder
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+
+ROBOT_IP ="192.168.80.3"
+
+def main(argv):
+    #1. setup positional arguments
+    parser=argparse.ArgumentParser()
+
+    #positional args
+    parser.add_argument('username',help='Spot Username')
+    parser.add_argument('password',help='Spot Password')
+    parser.add_argument('map_dir',help='Directory to save maps to')
+    parser.add_argument('start_n',type=int,help='Number of initial rotations to perform')
+
+    #optional end N
+    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=30)
+
+    options=parser.parse_args(argv)
+
+    #2. create sdk & authenticate
+    sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
+
+    #create robot object since
+    robot=sdk.create_robot(ROBOT_IP)
+    robot.authenticate(options.username,options.password)
+
+    print("Authenticating...")
+    robot.time_sync.wait_for_sync()
+
+    #3. create clients
+    lease_client=robot.ensure_client('lease')
+    recording_client=robot.ensure_client(GraphNavRecordingClient.default_service_name)
+    graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
+    command_client=robot.ensure_client(RobotCommandClient.default_service_name)
+    robot_state_client=robot.ensure_client('robot-state')
+
+    #create directory
+    if not os.path.exists(options.map_dir):
+        os.makedirs(options.map_dir)
+
+    if not robot.is_powered_on():
+        print("\n robot is powered off, exiting...\n")
+        sys.exit(1)
+
+    #4. acquire lease & execution
+    with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
+        print("\nbeginning\n")
+        time.sleep(2)
+
+        for a in range(options.start_n, options.end_n+1):
+            #battery check, won't run if less than 20%
+            if not check_batt_perc(robot_state_client,limit=20.0):
+                print(f"\nBattery below 20%. Stopping at N={a}.")
+                break
+
+            degPT=360.0/a
+            fold_name=f"test_n_{a:02d}"
+            full_path=os.path.join(options.map_dir,fold_name)
+
+            print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
+
+            if not os.path.exists(full_path):
+                os.makedirs(full_path)
+            
+            graph_nav_client.clear_graph()
+            recording_client.start_recording()
+            time.sleep(0.1)
+
+            for b in range(a):
+                print(f" [N={a}\ Step{b+1}/{a}] Rotating {degPT:.2f} degrees")
+
+                #snapshot
+                recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                time.sleep(0.5)
+
+                #turn
+                turn_relative(command_client,robot_state_client,degPT)
+                time.sleep(0.5)
+
+            #stop and download
+            recording_client.stop_recording()
+            time.sleep(0.5)
+            from bosdyn.client.graph_nav import download_graph_and_snapshots
+            download_graph_and_snapshots(recording_client, full_path)
+
+            #convert
+            print(f"\n[N{a}]Converting to ply...\n")
+            ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
+            convert_map_to_ply(full_path,ply_name)
+            
+    print("\nScript finished\n")
+
+#Functions
+def check_batt_perc(robot_state_client,limit=20.0):
+    """
+    Check battery percentage using protobuf path:
+    state.power_state.locomotion_charge_percentage.value
+    """
+    state=robot_state_client.get_robot_state()
+
+    #check if field exists
+    if not state.power_state.HasField('locomotion_charge_percentage'):
+        print("\nBattery percentage field not found, assuming sufficient charge\n")
+        return True
+    
+    #Access .value 
+    charge= state.power_state.locomotion_charge_percentage.value
+
+    print(f"\nBatter check, charge: {charge:.2f}%\n")
+
+    if charge < limit:
+        return False
+    return True
+
+def turn_relative(command_client,robot_state_client,yaw_deg):
+    yaw_rad=math.radians(yaw_deg)
+    transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+    odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
+    new_yaw=odom_t_body.angle+yaw_rad
+
+    cmd=RobotCommandBuilder.synchro_se2_trajectory_command(
+        goal_x=odom_t_body.x,
+        goal_y=odom_t_body.y,
+        goal_heading=new_yaw,
+        frame_name=ODOM_FRAME_NAME,
+        params=MobilityParams(max_vel=0.5, max_angular_vel=1.0)
+    )
+    command_client.robot_command(cmd)
+
+    duration=abs(yaw_rad)/0.8
+    if duration<2.0: duration=2.0
+    time.sleep(duration)
+
+def convert_map_to_ply(map_dir,output_file):
+    from bosdyn.client.graph_nav import map_processing as map_proc 
+    try:
+        current_snapshots=map_proc.load_snapshots(map_dir)
+        all_points=[]
+        for s_id, snap in current_snapshots.items():
+            if not snap.point_cloud.data: continue
+            data=snap.point_cloud.data
+            iter_points=struct.iter_unpack('<3f',data)
+            for p in iter_points:
+                all_points.append(p)
+            
+            with open(output_file,'w') as f:
+                f.write("ply\n")
+                f.write("format ascii 1.0\n")
+                f.write(f"element vertex {len(all_points)}\n")
+                f.write("property float x\n")
+                f.write("property float y\n")
+                f.write("property float z\n")
+                f.write("end_header\n")
+                for pt in all_points:
+                    f.write(f"{pt[0]} {pt[1]} {pt[2]}\n")
+    except Exception as e:
+        print(f"\nError during conversion: {e}\n")
+
+if __name__ == "__main__":
+    if not main(sys.argv[1:]):
+        sys.exit(1)

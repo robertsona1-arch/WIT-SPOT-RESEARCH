@@ -1,0 +1,6 @@
+rotating_map readme
+
+python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N>
+This script records a map with the robot making N turns
+It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
+THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
