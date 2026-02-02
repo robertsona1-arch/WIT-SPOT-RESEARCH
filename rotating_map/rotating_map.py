@@ -15,7 +15,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 1/26/2026
-Last Updated: 1/26/2026
+Last Updated: 1/29/2026
 """
 
 import sys
@@ -49,6 +49,12 @@ def main(argv):
     parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=30)
 
     options=parser.parse_args(argv)
+    if options.start_n<1:
+        options.start_n=1
+
+    if options.end_n<options.start_n:
+        options.end_n=options.start_n-1
+    
 
     #2. create sdk & authenticate
     sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
@@ -85,41 +91,46 @@ def main(argv):
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
-
-            degPT=360.0/a
-            fold_name=f"test_n_{a:02d}"
-            full_path=os.path.join(options.map_dir,fold_name)
-
-            print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
-
-            if not os.path.exists(full_path):
-                os.makedirs(full_path)
             
-            graph_nav_client.clear_graph()
-            recording_client.start_recording()
-            time.sleep(0.1)
+            if 360 % a ==0:
+                degPT=360.0/a
+                fold_name=f"test_n_{a:02d}"
+                full_path=os.path.join(options.map_dir,fold_name)
 
-            for b in range(a):
-                print(f" [N={a}\ Step{b+1}/{a}] Rotating {degPT:.2f} degrees")
+                print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
 
-                #snapshot
-                recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                if not os.path.exists(full_path):
+                    os.makedirs(full_path)
+                
+                graph_nav_client.clear_graph()
+                recording_client.start_recording()
+                time.sleep(0.1)
+
+                for b in range(a):
+                    print(f" [N={a}\ Step{b+1}/{a}] Rotating {degPT:.2f} degrees")
+
+                    #snapshot
+                    recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                    time.sleep(0.5)
+
+                    #turn
+                    turn_relative(command_client,robot_state_client,degPT)
+                    time.sleep(0.5)
+
+                #stop and download
+                recording_client.stop_recording()
                 time.sleep(0.5)
+                from bosdyn.client.graph_nav import download_graph_and_snapshots
+                download_graph_and_snapshots(recording_client, full_path)
 
-                #turn
-                turn_relative(command_client,robot_state_client,degPT)
-                time.sleep(0.5)
-
-            #stop and download
-            recording_client.stop_recording()
-            time.sleep(0.5)
-            from bosdyn.client.graph_nav import download_graph_and_snapshots
-            download_graph_and_snapshots(recording_client, full_path)
-
-            #convert
-            print(f"\n[N{a}]Converting to ply...\n")
-            ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-            convert_map_to_ply(full_path,ply_name)
+                #convert
+                print(f"\n[N{a}]Converting to ply...\n")
+                ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
+                convert_map_to_ply(full_path,ply_name)
+            else:
+                print(f"\nN={a} is not a factor of 360, skipping to next N\n")
+                continue
+            
             
     print("\nScript finished\n")
 
