@@ -45,9 +45,10 @@ pip install -r requirements.txt
 4.  *Note: `credentials.py` is ignored by Git, so your secrets will never be uploaded.*
 
 ## 3. How to Run Code
-1.  Open VS Code in this folder (`code .`).
-2.  **Select Interpreter:** Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (Mac) -> "Python: Select Interpreter" -> Select the `spot-env` you just created.
-3.  Open a script (e.g., `stand_and_walk.py`) and press **F5**.
+1.  Open a terminal window and cd ~/path/to/code/folder
+2.  Open VS Code in this folder (`code .`).
+3.  **Select Interpreter:** Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (Mac) -> "Python: Select Interpreter" -> Select the `spot-env` you just created.
+4.  Open a script (e.g., `stand_and_walk.py`) and press **F5** (mac FN F5).
 
 ## 4. How to Push Changes
 When you have made edits and want to save them to GitHub:
