@@ -32,6 +32,7 @@ from bosdyn.client.graph_nav import GraphNavRecordingClient, GraphNavClient
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.robot_command import RobotCommandClient, blocking_stand, MobilityParams, RobotCommandBuilder
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+from bosdyn.api.graph_nav import map_pb2
 
 ROBOT_IP ="192.168.80.3"
 
@@ -175,30 +176,52 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
     if duration<2.0: duration=2.0
     time.sleep(duration)
 
-def convert_map_to_ply(map_dir,output_file):
-    from bosdyn.client.graph_nav import map_processing as map_proc 
+def convert_map_to_ply(map_dir, output_file):
+    """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    
+    if not os.path.exists(snap_dir):
+        print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
+        return
+
+    all_points = []
+    
     try:
-        current_snapshots=map_proc.load_snapshots(map_dir)
-        all_points=[]
-        for s_id, snap in current_snapshots.items():
-            if not snap.point_cloud.data: continue
-            data=snap.point_cloud.data
-            iter_points=struct.iter_unpack('<3f',data)
+        files = os.listdir(snap_dir)
+        for filename in files:
+            # Ignore macOS hidden system files that crash the binary parser
+            if filename == '.DS_Store':
+                continue
+                
+            file_path = os.path.join(snap_dir, filename)
+            snapshot = map_pb2.WaypointSnapshot()
+            
+            with open(file_path, 'rb') as f:
+                snapshot.ParseFromString(f.read())
+                
+            cloud = snapshot.point_cloud
+            if not cloud.data:
+                continue
+                
+            iter_points = struct.iter_unpack('<3f', cloud.data)
             for p in iter_points:
                 all_points.append(p)
+
+        # Write to PLY format
+        with open(output_file, 'w') as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write(f"element vertex {len(all_points)}\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            f.write("end_header\n")
             
-            with open(output_file,'w') as f:
-                f.write("ply\n")
-                f.write("format ascii 1.0\n")
-                f.write(f"element vertex {len(all_points)}\n")
-                f.write("property float x\n")
-                f.write("property float y\n")
-                f.write("property float z\n")
-                f.write("end_header\n")
-                for pt in all_points:
-                    f.write(f"{pt[0]} {pt[1]} {pt[2]}\n")
+            for p in all_points:
+                f.write(f"{p[0]} {p[1]} {p[2]}\n")
+                
     except Exception as e:
-        print(f"\nError during conversion: {e}\n")
+        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
