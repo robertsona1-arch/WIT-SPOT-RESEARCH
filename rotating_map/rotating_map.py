@@ -1,6 +1,8 @@
 """
 rotating_map.py
-python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N>
+
+python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <OPTION_END_N>
+
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
@@ -15,7 +17,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 1/26/2026
-Last Updated: 1/29/2026
+Last Updated: 2/25/2026
 """
 
 import sys
@@ -28,13 +30,25 @@ import bosdyn.client
 import bosdyn.client.util
 from bosdyn.client.robot import Robot
 from bosdyn.client.map_processing import MapProcessingServiceClient #check this
-from bosdyn.client.graph_nav import GraphNavRecordingClient, GraphNavClient
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.robot_command import RobotCommandClient, blocking_stand, MobilityParams, RobotCommandBuilder
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
-from bosdyn.api.graph_nav import map_pb2
+# 1. CLIENTS (The "Doing" part)
+from bosdyn.client.graph_nav import GraphNavClient
+#from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
+from bosdyn.client.recording import GraphNavRecordingServiceClient
+from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
+
+# 2. APIS/PROTOS (The "Data" part)
+from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 ROBOT_IP ="192.168.80.3"
+
+# Create the params object
+params = spot_command_pb2.MobilityParams()
+
+# Example: setting a specific parameter like stairs mode
+params.stair_hint = True
 
 def main(argv):
     #1. setup positional arguments
@@ -47,7 +61,7 @@ def main(argv):
     parser.add_argument('start_n',type=int,help='Number of initial rotations to perform')
 
     #optional end N
-    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=30)
+    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=4)
 
     options=parser.parse_args(argv)
     if options.start_n<1:
