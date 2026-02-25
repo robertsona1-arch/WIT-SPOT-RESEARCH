@@ -71,3 +71,9 @@ When you have made edits and want to save them to GitHub:
     ```bash
     git push origin main
     ```
+
+## 5. Cloud Compare Settings
+
+1. **Go to File Open, set type to all**
+2. **Select the cloud, go to Display, Shades & Filter, EDL Shader**
+3. **Edit, Colors, Height Ramp**
