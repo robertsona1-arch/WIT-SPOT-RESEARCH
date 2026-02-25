@@ -1,5 +1,5 @@
 """
-convert_map_standalone.py
+python3 convert_map.py /path/to/downloaded/map --output converted.ply
 """
 import sys
 import os
