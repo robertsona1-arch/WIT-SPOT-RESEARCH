@@ -49,7 +49,7 @@ pip install -r requirements.txt
 2.  Open VS Code in this folder (`code .`).
 3.  **Select Interpreter:** Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (Mac) -> "Python: Select Interpreter" -> Select the `spot-env` you just created.
 4a.  Debugging: Open a script (e.g., `stand_and_walk.py`) and press **F5** (mac FN F5).
-4b.  `source spot-env/bin/actiavate`
+4b.  `source spot-env/bin/activate`
 5b.  python3...
 
 ## 4. How to Push Changes
