@@ -22,12 +22,14 @@ We do not share virtual environments. You must create your own local "toolbox."
 **For Mac:**
 ```bash
 python3 -m venv spot-env
+
 source spot-env/bin/activate
 ```
 
 **For Windows (PowerShell):**
 ```powershell
 py -3.10 -m venv spot-env
+
 .\spot-env\Scripts\activate
 ```
 *(If you get a permission error on Windows, run: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`)*
@@ -50,6 +52,7 @@ pip install -r requirements.txt
 3.  **Select Interpreter:** Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (Mac) -> "Python: Select Interpreter" -> Select the `spot-env` you just created.
 4a.  Debugging: Open a script (e.g., `stand_and_walk.py`) and press **F5** (mac FN F5).
 4b.  `source spot-env/bin/activate`
+5. Connect to robot wifi password is: @nt0rllJ102w33
 5b.  python3...
 
 ## 4. How to Push Changes
