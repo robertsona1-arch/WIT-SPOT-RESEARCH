@@ -4,7 +4,7 @@
 ## 1. Prerequisites
 Before cloning, ensure you have:
 * **VS Code** installed.
-* **Python 3.9 or 3.10** installed. (Do not use 3.11/3.12 yet, as the SDK has compatibility issues).
+* **Python 3.10** installed. (Do not use 3.11/3.12 yet, as the SDK has compatibility issues).
 * **Git** installed.
 
 ## 2. Initial Setup (Do this once)
