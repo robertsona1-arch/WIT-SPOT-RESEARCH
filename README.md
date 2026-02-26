@@ -50,10 +50,11 @@ pip install -r requirements.txt
 1.  Open a terminal window and cd ~/path/to/code/folder
 2.  Open VS Code in this folder (`code .`).
 3.  **Select Interpreter:** Press `Ctrl+Shift+P` (Windows) or `Cmd+Shift+P` (Mac) -> "Python: Select Interpreter" -> Select the `spot-env` you just created.
-4a.  Debugging: Open a script (e.g., `stand_and_walk.py`) and press **F5** (mac FN F5).
-4b.  `source spot-env/bin/activate`
-5. Connect to robot wifi password is: @nt0rllJ102w33
-5b.  python3...
+4.  **Important** Make sure no other processes are running Windows `taskkill /F /IM python.exe /T`  Mac `pkill -f python`
+5.  Debugging: Open a script (e.g., `stand_and_walk.py`) and press **F5** (mac FN F5).
+6.  `source spot-env/bin/activate`
+7.  Connect to robot wifi password is: @nt0rllJ102w33
+8.  python3...
 
 ## 4. How to Push Changes
 When you have made edits and want to save them to GitHub:
