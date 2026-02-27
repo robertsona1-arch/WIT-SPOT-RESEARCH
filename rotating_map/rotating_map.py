@@ -34,6 +34,7 @@ from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 # 1. CLIENTS (The "Doing" part)
 from bosdyn.client.graph_nav import GraphNavClient
+import bosdyn.client.graph_nav 
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
@@ -83,7 +84,7 @@ def main(argv):
 
     #3. create clients
     lease_client=robot.ensure_client('lease')
-    recording_client=robot.ensure_client(GraphNavRecordingClient.default_service_name)
+    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
     graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
     command_client=robot.ensure_client(RobotCommandClient.default_service_name)
     robot_state_client=robot.ensure_client('robot-state')
@@ -135,8 +136,8 @@ def main(argv):
                 #stop and download
                 recording_client.stop_recording()
                 time.sleep(0.5)
-                from bosdyn.client.graph_nav import download_graph_and_snapshots
-                download_graph_and_snapshots(recording_client, full_path)
+                
+                bosdyn.client.graph_nav.write_graph_and_snapshots(graph_nav_client, options.map_dir, map_name="map_at_turn"+str(a))
 
                 #convert
                 print(f"\n[N{a}]Converting to ply...\n")
