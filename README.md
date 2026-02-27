@@ -13,6 +13,8 @@ Before cloning, ensure you have:
 Open your terminal/command prompt:
 ```bash
 git clone [https://github.com/robertsona1-arch/WIT-SPOT-RESEARCH.git](https://github.com/robertsona1-arch/WIT-SPOT-RESEARCH.git)
+```
+```bash
 cd WIT-SPOT-RESEARCH
 ```
 
@@ -22,14 +24,17 @@ We do not share virtual environments. You must create your own local "toolbox."
 **For Mac:**
 ```bash
 python3 -m venv spot-env
-
+```
+```bash
 source spot-env/bin/activate
 ```
 
 **For Windows (PowerShell):**
 ```powershell
 py -3.10 -m venv spot-env
+```
 
+```powershell
 .\spot-env\Scripts\activate
 ```
 *(If you get a permission error on Windows, run: `Set-ExecutionPolicy RemoteSigned -Scope CurrentUser`)*
