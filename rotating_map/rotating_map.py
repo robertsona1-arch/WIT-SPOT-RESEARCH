@@ -27,17 +27,21 @@ import argparse
 import struct
 import time
 import bosdyn.client
+from bosdyn.client import map_processing
 import bosdyn.client.util
 from bosdyn.client.robot import Robot
 from bosdyn.client.map_processing import MapProcessingServiceClient #check this
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 # 1. CLIENTS (The "Doing" part)
-from bosdyn.client.graph_nav import GraphNavClient
 import bosdyn.client.graph_nav 
+from bosdyn.client.graph_nav import GraphNavClient
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
+from bosdyn.api.graph_nav import map_pb2
+from bosdyn.api import geometry_pb2
+from bosdyn.client.map_processing import MapProcessingServiceClient
 
 # 2. APIS/PROTOS (The "Data" part)
 from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
@@ -47,6 +51,7 @@ ROBOT_IP ="192.168.80.3"
 
 # Create the params object
 params = spot_command_pb2.MobilityParams()
+
 
 # Example: setting a specific parameter like stairs mode
 params.stair_hint = True
@@ -88,6 +93,8 @@ def main(argv):
     graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
     command_client=robot.ensure_client(RobotCommandClient.default_service_name)
     robot_state_client=robot.ensure_client('robot-state')
+    map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
+
 
     #create directory
     if not os.path.exists(options.map_dir):
@@ -98,7 +105,10 @@ def main(argv):
         sys.exit(1)
 
     #4. acquire lease & execution
-    with LeaseKeepAlive(lease_client, must_acquire=True, return_at_exit=True):
+
+    #forcefully take the lease:
+    lease_client.take()
+    with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
         print("\nbeginning\n")
         time.sleep(2)
 
@@ -118,7 +128,7 @@ def main(argv):
                 if not os.path.exists(full_path):
                     os.makedirs(full_path)
                 
-                graph_nav_client.clear_graph()
+                #graph_nav_client.clear_graph() got error saying call stop recording first
                 recording_client.start_recording()
                 time.sleep(0.1)
 
@@ -137,12 +147,23 @@ def main(argv):
                 recording_client.stop_recording()
                 time.sleep(0.5)
                 
-                bosdyn.client.graph_nav.write_graph_and_snapshots(graph_nav_client, options.map_dir, map_name="map_at_turn"+str(a))
+                
+                # Use the module-level helper, passing the directory and the client
+                #this one didn't work, said "AttributeError: module 'bosdyn.client.map_processing' has no attribute 'write_graph_and_snapshots'"
+                """map_processing.write_graph_and_snapshots(#this one gave error
+                    full_path, 
+                    graph_nav_client, 
+                    map_name="map_at_turn_" + str(a)
+                )"""
+                # Use the module-level helper, passing the directory and the client
+                bosdyn.client.graph_nav.write_graph_and_snapshots(options.map_dir, graph_nav_client)
 
+                
                 #convert
                 print(f"\n[N{a}]Converting to ply...\n")
                 ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
                 convert_map_to_ply(full_path,ply_name)
+                graph_nav_client.clear_graph()
             else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue
@@ -178,12 +199,15 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
     odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
     new_yaw=odom_t_body.angle+yaw_rad
 
-    cmd=RobotCommandBuilder.synchro_se2_trajectory_command(
-        goal_x=odom_t_body.x,
-        goal_y=odom_t_body.y,
-        goal_heading=new_yaw,
-        frame_name=ODOM_FRAME_NAME,
-        params=MobilityParams(max_vel=0.5, max_angular_vel=1.0)
+    params.vel_limit.max_vel.linear.x = 0.5
+    params.vel_limit.max_vel.linear.y = 0.5
+    params.vel_limit.max_vel.angular = 1.0
+
+    # 1. Package your raw coordinates into an SE2Pose protobuf object
+    se2_pose = geometry_pb2.SE2Pose(position=geometry_pb2.Vec2(x=odom_t_body.x, y=odom_t_body.y),angle=new_yaw)
+
+    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(se2_pose,frame_name=ODOM_FRAME_NAME,
+    params=params  # This is the object you built on standalone lines earlier
     )
     command_client.robot_command(cmd)
 
