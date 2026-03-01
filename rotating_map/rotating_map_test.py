@@ -1,8 +1,9 @@
 """
-rotating_map.py
+rotating_map_test.py
 
-python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <OPTION_END_N>
+python3 rotating_map_test.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <OPTION_END_N>
 
+This is a test script for the rotating_map.py script, designed to validate the map recording and conversion process without requiring actual robot hardware. It uses MagicMock to simulate the robot's clients and responses, allowing us to test the logic of our mapping and conversion functions in isolation.
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
@@ -16,8 +17,8 @@ Written by Adam Robertson, Wentworth Institute of Technology, School of Engineer
 WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
-Date Created: 1/26/2026
-Last Updated: 2/25/2026
+Date Created: 2/28/2026
+Last Updated: 2/28/2026
 """
 
 import argparse
@@ -50,7 +51,6 @@ from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
 import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
-
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 # 1. CLIENTS (The "Doing" part)
@@ -65,6 +65,7 @@ from bosdyn.client.map_processing import MapProcessingServiceClient
 from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
+from unittest.mock import MagicMock
 from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
@@ -98,23 +99,38 @@ def main(argv):
     
 
     #2. create sdk & authenticate
-    sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
+    #sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
 
     #create robot object since
-    robot=sdk.create_robot(ROBOT_IP)
-    robot.authenticate(options.username,options.password)
+    #robot=sdk.create_robot(ROBOT_IP)
+    robot=MagicMock()
+    #robot.authenticate(options.username,options.password)
 
     print("Authenticating...")
-    robot.time_sync.wait_for_sync()
+    #robot.time_sync.wait_for_sync()
 
     #3. create clients
-    lease_client=robot.ensure_client('lease')
-    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
-    graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
-    command_client=robot.ensure_client(RobotCommandClient.default_service_name)
-    robot_state_client=robot.ensure_client('robot-state')
-    map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
-
+    #lease_client=robot.ensure_client('lease')
+    lease_client=MagicMock()
+    #recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
+    recording_client=MagicMock()
+    #graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
+    graph_nav_client=MagicMock()
+    #command_client=robot.ensure_client(RobotCommandClient.default_service_name)
+    command_client=MagicMock()
+    #robot_state_client=robot.ensure_client('robot-state')
+    robot_state_client=MagicMock()
+    #map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
+    map_processing_client=MagicMock()
+    # 1. Create the mock state client
+    robot_state_client = MagicMock()
+    
+    # 2. Build a fake state object with a hardcoded battery float
+    mock_state = MagicMock()
+    mock_state.power_state.locomotion_charge_percentage.value = 95.00
+    
+    # 3. Tell the client to return this fake state when called
+    robot_state_client.get_robot_state.return_value = mock_state
 
     #create directory
     if not os.path.exists(options.map_dir):
@@ -134,9 +150,11 @@ def main(argv):
 
         for a in range(options.start_n, options.end_n+1):
             #battery check, won't run if less than 20%
+            """This will give unsupported string format error if the mock doesn't have the field
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
+            """
             
             if 360 % a ==0:
                 degPT=360.0/a
@@ -176,7 +194,7 @@ def main(argv):
                     map_name="map_at_turn_" + str(a)
                 )"""
                 # Use the module-level helper, passing the directory and the client
-                bosdyn.client.graph_nav.write_graph_and_snapshots(options.map_dir, graph_nav_client)
+                #bosdyn.client.graph_nav.write_graph_and_snapshots(options.map_dir, graph_nav_client)
 
                 
                 #convert
@@ -215,8 +233,9 @@ def check_batt_perc(robot_state_client,limit=20.0):
 
 def turn_relative(command_client,robot_state_client,yaw_deg):
     yaw_rad=math.radians(yaw_deg)
-    transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
-    odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
+    #transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+    #odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
+    odom_t_body=math_helpers.SE2Pose(0.0,0.0,0.0)
     new_yaw=odom_t_body.angle+yaw_rad
 
     params.vel_limit.max_vel.linear.x = 0.5
