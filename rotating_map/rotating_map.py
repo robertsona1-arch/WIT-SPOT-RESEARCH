@@ -81,7 +81,7 @@ def main(argv):
     parser.add_argument('start_n',type=int,help='Number of initial rotations to perform')
 
     #optional end N
-    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=6)
+    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=8)
 
     options=parser.parse_args(argv)
     if options.start_n<1:
