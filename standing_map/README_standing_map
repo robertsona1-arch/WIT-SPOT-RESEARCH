@@ -1,0 +1,6 @@
+Read me for standing_map.py
+
+python3 standing_map.py <USERNAME> <PASSWORD> <DIRECTORY> 
+
+This script is to test how many snapshots are needed in a specific location to be able to see specific objects. 
+This script has the robot stand in a spot, and create maps with N waypoints from 1 to 10. 

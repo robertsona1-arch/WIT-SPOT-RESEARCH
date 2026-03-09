@@ -132,7 +132,6 @@ def main(argv):
             fold_name=f"test_n_{a:02d}"
             full_path=os.path.join(options.map_dir,fold_name)
 
-            print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
 
             if not os.path.exists(full_path):
                 os.makedirs(full_path)
@@ -147,8 +146,6 @@ def main(argv):
                 recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
                 time.sleep(3)#need to have this so it goes on when its ready
                 print("\nCreating Waypoint\n")
-                #turn
-                turn_relative(command_client,robot_state_client,degPT)
                 time.sleep(3)
 
             #stop and download
