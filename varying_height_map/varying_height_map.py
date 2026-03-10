@@ -1,7 +1,7 @@
 """
 varying_height_map.py
 
-python3 varying_height_map.py <USERNAME> <PASSWORD> <DIRECTORY> 
+python3 varying_height_map.py <USERNAME> <PASSWORD> <DIRECTORY> --end_n <END_N>
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
@@ -77,6 +77,7 @@ def main(argv):
     parser.add_argument('username',help='Spot Username')
     parser.add_argument('password',help='Spot Password')
     parser.add_argument('map_dir',help='Directory to save maps to')
+    parser.add_argument('--end_n',type=int,help='Number of final step amount to perform', default=10)
     
 
     options=parser.parse_args(argv)
@@ -123,11 +124,9 @@ def main(argv):
         command_client.robot_command(stand)
         time.sleep(3)
 
-        control_height(command_client,-0.1,robot_state_client)
-
-
-
-        for a in range(1, 11):
+        
+        for a in range(1, options.end_n + 1):
+            control_height(command_client,-0.1,robot_state_client)
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
@@ -144,13 +143,26 @@ def main(argv):
             recording_client.start_recording()
             print("\nStarting Recording\n")
             time.sleep(0.1)
-
+            low=-0.1
+            high=0.1
+            step=(high-low)/a
+            cur_h=low
             for b in range(a):
-                #snapshot
-                recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                time.sleep(3)#need to have this so it goes on when its ready
-                print("\nCreating Waypoint\n")
-                time.sleep(3)
+                if a!=1:
+                    #snapshot
+                    recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                    time.sleep(3)#need to have this so it goes on when its ready
+                    print("\nCreating Waypoint\n")
+                    time.sleep(3)
+                    cur_h+=step
+                    control_height(command_client,cur_h,robot_state_client)
+                    time.sleep(2)
+                else:
+                    #snapshot
+                    recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                    time.sleep(3)#need to have this so it goes on when its ready
+                    print("\nCreating Waypoint\n")
+                    time.sleep(3)
 
             #stop and download
             recording_client.stop_recording()
