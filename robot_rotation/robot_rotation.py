@@ -62,13 +62,6 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
-# Create the params object
-params = spot_command_pb2.MobilityParams()
-
-
-# Example: setting a specific parameter like stairs mode
-params.stair_hint = True
-
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
@@ -116,11 +109,19 @@ def main(argv):
         print("\nbeginning\n")
         time.sleep(2)
 
-        for a in range(options.start_n, options.end_n+1):
+        #Command the robot to stand
+        print("\nCommanding robot to stand...\n")
+        stand=RobotCommandBuilder.synchro_stand_command()
+        command_client.robot_command(stand)
+        time.sleep(3)
+
+        for a in range(options.start_n, options.start_n+2):
             #battery check, won't run if less than 20%
+            """
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
+                """
             
             if 360 % a ==0:
                 degPT=360.0/a
@@ -128,7 +129,7 @@ def main(argv):
 
                 print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
 
-                print(f"\n Taking snapshot at N={a} Step{b+1}/{a}\n")
+                
                 time.sleep(0.1)
 
                 for b in range(a):
@@ -177,21 +178,35 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
     odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
     new_yaw=odom_t_body.angle+yaw_rad
 
-    params.vel_limit.max_vel.linear.x = 0.5
-    params.vel_limit.max_vel.linear.y = 0.5
-    params.vel_limit.max_vel.angular = 1.0
-
-    # 1. Package your raw coordinates into an SE2Pose protobuf object
-    se2_pose = geometry_pb2.SE2Pose(position=geometry_pb2.Vec2(x=odom_t_body.x, y=odom_t_body.y),angle=new_yaw)
-
-    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(se2_pose,frame_name=ODOM_FRAME_NAME,
-    params=params  # This is the object you built on standalone lines earlier
+    #set speed limits using geometry api first
+    speed_limit=geometry_pb2.SE2VelocityLimit(
+        max_vel=geometry_pb2.SE2Velocity(
+            linear=geometry_pb2.Vec2(x=0.5,y=0.5),angular=1.0
+        )
     )
-    command_client.robot_command(cmd)
+
+    #initalize params and attach speed limits
+    params=spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+
+    # 1. Package raw coordinates into an SE2Pose protobuf object
+    se2_pose = geometry_pb2.SE2Pose(
+        position=geometry_pb2.Vec2(
+            x=odom_t_body.x, y=odom_t_body.y)
+            ,angle=new_yaw)
 
     duration=abs(yaw_rad)/0.8
     if duration<2.0: duration=2.0
-    time.sleep(duration)
+
+    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(
+        se2_pose,
+        frame_name=ODOM_FRAME_NAME,
+        params=params  # This is the object built on standalone lines earlier
+    )
+    command_client.robot_command(cmd, end_time_secs=time.time()+duration)
+
+    time.sleep(duration+0.5)
+
+    
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
