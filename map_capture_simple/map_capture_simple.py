@@ -77,12 +77,6 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
-# Create the params object
-params = spot_command_pb2.MobilityParams()
-
-
-# Example: setting a specific parameter like stairs mode
-params.stair_hint = True
 
 def main(argv):
     #1. setup positional arguments
@@ -93,11 +87,8 @@ def main(argv):
     parser.add_argument('password',help='Spot Password')
     parser.add_argument('map_dir',help='Directory to save maps to')
 
-
-
     options=parser.parse_args(argv)
     
-
     #2. create sdk & authenticate
     sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
 
