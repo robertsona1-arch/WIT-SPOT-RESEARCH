@@ -1,1 +1,6 @@
 README for varying_height_map
+
+
+base_offset_rt_body moves the body relative to itself, invalid for stand command
+
+base_offset_rt_footprint is what we want
