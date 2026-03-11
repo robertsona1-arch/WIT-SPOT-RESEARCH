@@ -179,7 +179,7 @@ def check_batt_perc(robot_state_client,limit=20.0):
     #Access .value 
     charge= state.power_state.locomotion_charge_percentage.value
 
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
+    print(f"\nBattery check, charge: {charge:.2f}%\n")
 
     if charge < limit:
         return False
