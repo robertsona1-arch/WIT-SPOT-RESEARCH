@@ -4,3 +4,19 @@ python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N>
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
+
+
+
+Notes:
+    3/4/2026 Testing:
+        The script worked with no issues
+        However the maps did not turn out as expected. Imagine this, from a top down view, you took a picture of the room you are in and put it on the paper. You then rotate 90 degrees and do the same. You do this twice more so you end up with 4 pictures of the same room. However, instead of orientating them and laying on top of each other. You lay them perpendicular with respect to the previous. This is what happend with our snapshots, they were saved with respect to the local waypoint frame, thus offsetting 90 degrees after each turn. 
+    Possible Solutions:
+        Use the first waypoint as the origin frame. This can be done post-processing using the edges in the Graph object that define the transformations (SE3Pose) between each frame.
+        Need to designate first waypoint as origin, for the next waypoints, read the edges to calculate T from origin to current frame. 
+        During conversion, multiply every x,y,z in the point cloud by the T. 
+            https://dev.bostondynamics.com/docs/concepts/geometry_and_frames.html
+            https://dev.bostondynamics.com/python/bosdyn-client/src/bosdyn/client/frame_helpers.html#bosdyn.client.frame_helpers.get_a_tform_b 
+
+        nodes are the frames, edges are the transformations
+        bosdyn.client.frame_helpers.get_a_tform_b(frame_tree_snapshot, frame_a, frame_b, validate=True)

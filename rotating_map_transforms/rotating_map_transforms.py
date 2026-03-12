@@ -1,10 +1,11 @@
 """
-rotating_map.py
+rotating_map_transforms.py
 
-python3 rotating_map.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <OPTION_END_N>
+python3 rotating_map_transforms.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <--OPTION_END_N>
 
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
+This script is an updated version of rotating_map that will track the rotation of the snapshots and use the transformation matrix
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
 This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
 Minimal AI was used to aid in syntax and structure
@@ -16,8 +17,8 @@ Written by Adam Robertson, Wentworth Institute of Technology, School of Engineer
 WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
-Date Created: 1/26/2026
-Last Updated: 2/25/2026
+Date Created: 3/12/2026
+Last Updated: 3/12/2026
 """
 
 import argparse
@@ -205,6 +206,8 @@ def check_batt_perc(robot_state_client,limit=20.0):
         return False
     return True
 
+
+
 def turn_relative(command_client,robot_state_client,yaw_deg):
     yaw_rad=math.radians(yaw_deg)
     transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
@@ -238,13 +241,30 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
 
     time.sleep(duration+0.5)
 
+
 def convert_map_to_ply(map_dir, output_file):
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    graph_path=os.path.join(map_dir, 'graph.pb')
     
-    if not os.path.exists(snap_dir):
+    if not os.path.exists(snap_dir) or not os.path.exists(graph_path):
         print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
         return
+
+    #New, read graph to get transformations
+    graph=map_pb2.Graph()
+    with open(graph_path,'rb') as f:
+        graph.ParseFromString(f.read())
+
+    #Map each waypoint ID to its specifc KO transform
+    waypoint_transforms={}
+    for wp in graph.waypoints:
+        #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
+        #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
+        #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
+        wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+        ko_tform_wp=wp_tform_ko.inverse()#take the inverse
+        waypoint_transforms[wp.id]=ko_tform_wp
 
     all_points = []
     
@@ -264,10 +284,20 @@ def convert_map_to_ply(map_dir, output_file):
             cloud = snapshot.point_cloud
             if not cloud.data:
                 continue
-                
+
+            #get specific transform for this snapshot
+            if snapshot.id not in waypoint_transforms:
+                print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
+                continue
+            ko_tform_wp=waypoint_transforms[snapshot.id]
+
+            #unpack and transform points
             iter_points = struct.iter_unpack('<3f', cloud.data)
             for p in iter_points:
-                all_points.append(p)
+                #apply transformation matrix to align the frame w/ origin frame
+                #transformation_point handles 3d vector rotation+translation
+                global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
+                all_points.append(global_p)
 
         # Write to PLY format
         with open(output_file, 'w') as f:
@@ -280,7 +310,7 @@ def convert_map_to_ply(map_dir, output_file):
             f.write("end_header\n")
             
             for p in all_points:
-                f.write(f"{p[0]} {p[1]} {p[2]}\n")
+                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
                 
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
