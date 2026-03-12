@@ -17,7 +17,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Adam Robertson
 Date Created: 3/11/2026
-Last Updated: 3/11/2026
+Last Updated: 3/12/2026
 """
 
 import argparse
@@ -57,7 +57,7 @@ from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2
+from bosdyn.api import geometry_pb2, trajectory_pb2 
 from bosdyn.client.map_processing import MapProcessingServiceClient
 
 # 2. APIS/PROTOS (The "Data" part)
@@ -204,6 +204,7 @@ def main(argv):
             
     print("\nScript finished\n")
 
+
 #Functions
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -220,7 +221,7 @@ def check_batt_perc(robot_state_client,limit=20.0):
     #Access .value 
     charge= state.power_state.locomotion_charge_percentage.value
 
-    print(f"\nBattery check, charge: {charge:.2f}%\n")
+    print(f"\nBatter check, charge: {charge:.2f}%\n")
 
     if charge < limit:
         return False
@@ -232,7 +233,7 @@ def control_height(command_client,height,robot_state_client):
     z_offset=height
 
     #build the pose (position+rotation), w=1 is neutral quaternion
-    footprint_R_body=geometry_pb2.SE3Pose(
+    footprint_R_body=trajectory_pb2.SE3Trajectory(
         position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
         rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
     )
@@ -306,13 +307,21 @@ if __name__ == "__main__":
 
 
 # Last time I ran this test, I got the following message after "Commanding robot to stand..." was printed.
-'''
-Traceback (most recent call last):
-  File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 304, in <module>
-    if not main(sys.argv[1:]):
-  File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 151, in main
-    control_height(command_client,-0.1,robot_state_client)
-  File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 241, in control_height
-    body_control=spot_command_pb2.BodyControlParams(
-TypeError: Parameter to initialize message field must be dict or instance of same class: expected <class 'bosdyn.api.trajectory_pb2.SE3Trajectory'> got <class 'bosdyn.api.geometry_pb2.SE3Pose'>.
-'''
+# '''
+# Traceback (most recent call last):
+#   File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 304, in <module>
+#     if not main(sys.argv[1:]):
+#   File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 151, in main
+#     control_height(command_client,-0.1,robot_state_client)
+#   File "C:\Users\GmsAc\WIT-SPOT-RESEARCH\varying_height_map\varying_height_map_test.py", line 241, in control_height
+#     body_control=spot_command_pb2.BodyControlParams(
+# TypeError: Parameter to initialize message field must be dict or instance of same class: expected <class 'bosdyn.api.trajectory_pb2.SE3Trajectory'> got <class 'bosdyn.api.geometry_pb2.SE3Pose'>.
+# ''' fix: replaced "geometry" and "Pose" with "trajectory" and "Trajectory" in line 236
+
+# Same Traceback, except last one was for line 236 instead of line 242, but different error
+# NameError: name 'trajectory_pb2' is not defined
+# fix: added "trajectory_pb2" to the import in line 60
+
+# Same Traceback but different error
+# ValueError: Protocol message SE3Trajectory has no "position" field.
+# I do not know what the proper arguments to pass are for varying_height_map/varying_height_map_test.
