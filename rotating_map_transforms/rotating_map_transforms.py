@@ -1,7 +1,7 @@
 """
 rotating_map_transforms.py
 
-python3 rotating_map_transforms.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <--OPTION_END_N>
+python3 rotating_map_transforms.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> --end_n <END_N>
 
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
@@ -125,13 +125,13 @@ def main(argv):
     lease_client.take()
     with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
         print("\nbeginning\n")
-        time.sleep(2)
+        time.sleep(1)
 
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
-        time.sleep(3)
+        time.sleep(2)
 
         for a in range(options.start_n, options.end_n+1):
             #battery check, won't run if less than 20%
@@ -159,7 +159,7 @@ def main(argv):
 
                     #snapshot
                     recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                    time.sleep(3)#need to have this so it goes on when its ready
+                    time.sleep(2)#need to have this so it goes on when its ready
                     print("\nCreating Waypoint\n")
                     #turn
                     turn_relative(command_client,robot_state_client,degPT)
@@ -175,14 +175,14 @@ def main(argv):
                 #convert
                 print(f"\n[N{a}]Converting to ply...\n")
                 ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-                convert_map_to_ply(full_path,ply_name)
+                convert_map_to_ply(full_path,ply_name,a)
                 graph_nav_client.clear_graph()
             else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue
             
             
-    print("\nScript finished\n")
+    
 
 #Functions
 def check_batt_perc(robot_state_client,limit=20.0):
@@ -200,7 +200,7 @@ def check_batt_perc(robot_state_client,limit=20.0):
     #Access .value 
     charge= state.power_state.locomotion_charge_percentage.value
 
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
+    print(f"\nBattery check, charge: {charge:.2f}%\n")
 
     if charge < limit:
         return False
@@ -242,29 +242,38 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
     time.sleep(duration+0.5)
 
 
-def convert_map_to_ply(map_dir, output_file):
+def convert_map_to_ply(map_dir, output_file,n): 
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    #removed the tranformation from frame 1, don't need it
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
-    graph_path=os.path.join(map_dir, 'graph.pb')
+    if n!=1:
+        graph_path=os.path.join(map_dir, 'graph')
     
-    if not os.path.exists(snap_dir) or not os.path.exists(graph_path):
+    
+    if not os.path.exists(snap_dir):
         print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
         return
+    
+    if n!=1:
+        if not os.path.exists(graph_path):
+            print(f"\n graph address error\n")
+            return
 
-    #New, read graph to get transformations
-    graph=map_pb2.Graph()
-    with open(graph_path,'rb') as f:
-        graph.ParseFromString(f.read())
+    if n!=1:
+        #New, read graph to get transformations
+        graph=map_pb2.Graph()
+        with open(graph_path,'rb') as f:
+            graph.ParseFromString(f.read())
 
-    #Map each waypoint ID to its specifc KO transform
-    waypoint_transforms={}
-    for wp in graph.waypoints:
-        #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
-        #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
-        #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
-        wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
-        ko_tform_wp=wp_tform_ko.inverse()#take the inverse
-        waypoint_transforms[wp.id]=ko_tform_wp
+        #Map each waypoint ID to its specifc KO transform
+        waypoint_transforms={}
+        for wp in graph.waypoints:
+            #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
+            #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
+            #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
+            wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+            ko_tform_wp=wp_tform_ko.inverse()#take the inverse
+            waypoint_transforms[wp.snapshot_id]=ko_tform_wp #changed from wp.id because it couldnt find the graphs
 
     all_points = []
     
@@ -285,19 +294,23 @@ def convert_map_to_ply(map_dir, output_file):
             if not cloud.data:
                 continue
 
-            #get specific transform for this snapshot
-            if snapshot.id not in waypoint_transforms:
-                print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
-                continue
-            ko_tform_wp=waypoint_transforms[snapshot.id]
+            if n!=1:
+                #get specific transform for this snapshot
+                if snapshot.id not in waypoint_transforms:
+                    print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
+                    continue
+                ko_tform_wp=waypoint_transforms[snapshot.id]
 
             #unpack and transform points
             iter_points = struct.iter_unpack('<3f', cloud.data)
             for p in iter_points:
-                #apply transformation matrix to align the frame w/ origin frame
-                #transformation_point handles 3d vector rotation+translation
-                global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
-                all_points.append(global_p)
+                if n!=1:
+                    #apply transformation matrix to align the frame w/ origin frame
+                    #transformation_point handles 3d vector rotation+translation
+                    global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
+                    all_points.append(global_p)
+                else:
+                    all_points.append(p)
 
         # Write to PLY format
         with open(output_file, 'w') as f:
