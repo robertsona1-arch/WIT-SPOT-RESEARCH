@@ -144,7 +144,7 @@ def main(argv):
             for b in range(a):
                 #snapshot
                 recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                time.sleep(3)#need to have this so it goes on when its ready
+                #time.sleep(3)#need to have this so it goes on when its ready
                 print("\nCreating Waypoint\n")
                 time.sleep(3)
 
