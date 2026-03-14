@@ -3,6 +3,8 @@ rotating_map_transforms.py
 
 python3 rotating_map_transforms.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> --end_n <END_N>
 
+Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
+
 This script records a map with the robot making N turns
 It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
 This script is an updated version of rotating_map that will track the rotation of the snapshots and use the transformation matrix
@@ -115,17 +117,15 @@ def main(argv):
     if not os.path.exists(options.map_dir):
         os.makedirs(options.map_dir)
 
-    if not robot.is_powered_on():
-        print("\n robot is powered off, exiting...\n")
-        sys.exit(1)
-
-    #4. acquire lease & execution
-
     #forcefully take the lease:
     lease_client.take()
     with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
         print("\nbeginning\n")
-        time.sleep(1)
+        #clear estops and power on motors locally
+        robot.time_sync.wait_for_sync()
+        if not robot.is_powered_on():
+            print("\nPowering on leo\n")
+            robot.power_on(timeout_sec=20)
 
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")
@@ -159,7 +159,7 @@ def main(argv):
 
                     #snapshot
                     recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                    time.sleep(2)#need to have this so it goes on when its ready
+                    #time.sleep(2)#need to have this so it goes on when its ready, I remember needing this but don't have it written down anywhere, test if its actually needed
                     print("\nCreating Waypoint\n")
                     #turn
                     turn_relative(command_client,robot_state_client,degPT)
@@ -180,10 +180,10 @@ def main(argv):
             else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue
-            
-            
-    
 
+        command_client.robot_command(RobotCommandBuilder.synchro_sit_command())
+            
+            
 #Functions
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -205,7 +205,6 @@ def check_batt_perc(robot_state_client,limit=20.0):
     if charge < limit:
         return False
     return True
-
 
 
 def turn_relative(command_client,robot_state_client,yaw_deg):

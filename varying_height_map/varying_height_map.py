@@ -105,9 +105,6 @@ def main(argv):
     if not os.path.exists(options.map_dir):
         os.makedirs(options.map_dir)
 
-    if not robot.is_powered_on():
-        print("\n robot is powered off, exiting...\n")
-        sys.exit(1)
 
     #4. acquire lease & execution
 
@@ -115,7 +112,11 @@ def main(argv):
     lease_client.take()
     with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
         print("\nbeginning\n")
-        time.sleep(2)
+        #clear estops and power on motors locally
+        robot.time_sync.wait_for_sync()
+        if not robot.is_powered_on():
+            print("\nPowering on leo\n")
+            robot.power_on(timeout_sec=20)
 
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")
