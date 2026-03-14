@@ -49,7 +49,6 @@ from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
 import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
-
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 # 1. CLIENTS (The "Doing" part)
@@ -57,7 +56,7 @@ from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2
+from bosdyn.api import geometry_pb2, trajectory_pb2 
 from bosdyn.client.map_processing import MapProcessingServiceClient
 
 # 2. APIS/PROTOS (The "Data" part)
@@ -174,7 +173,7 @@ def main(argv):
             #convert
             print(f"\n[N{a}]Converting to ply...\n")
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-            convert_map_to_ply(full_path,ply_name)
+            convert_map_to_ply(full_path,ply_name,a)
             graph_nav_client.clear_graph()
             
     print("\nScript finished\n")
@@ -242,13 +241,38 @@ def control_height(command_client,height,robot_state_client):
     #wait for stabilization
     time.sleep(2.0)
 
-def convert_map_to_ply(map_dir, output_file):
+def convert_map_to_ply(map_dir, output_file,n): 
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    #removed the tranformation from frame 1, don't need it
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    if n!=1:
+        graph_path=os.path.join(map_dir, 'graph')
+    
     
     if not os.path.exists(snap_dir):
         print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
         return
+    
+    if n!=1:
+        if not os.path.exists(graph_path):
+            print(f"\n graph address error\n")
+            return
+
+    if n!=1:
+        #New, read graph to get transformations
+        graph=map_pb2.Graph()
+        with open(graph_path,'rb') as f:
+            graph.ParseFromString(f.read())
+
+        #Map each waypoint ID to its specifc KO transform
+        waypoint_transforms={}
+        for wp in graph.waypoints:
+            #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
+            #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
+            #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
+            wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+            ko_tform_wp=wp_tform_ko.inverse()#take the inverse
+            waypoint_transforms[wp.snapshot_id]=ko_tform_wp #changed from wp.id because it couldnt find the graphs
 
     all_points = []
     
@@ -268,10 +292,24 @@ def convert_map_to_ply(map_dir, output_file):
             cloud = snapshot.point_cloud
             if not cloud.data:
                 continue
-                
+
+            if n!=1:
+                #get specific transform for this snapshot
+                if snapshot.id not in waypoint_transforms:
+                    print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
+                    continue
+                ko_tform_wp=waypoint_transforms[snapshot.id]
+
+            #unpack and transform points
             iter_points = struct.iter_unpack('<3f', cloud.data)
             for p in iter_points:
-                all_points.append(p)
+                if n!=1:
+                    #apply transformation matrix to align the frame w/ origin frame
+                    #transformation_point handles 3d vector rotation+translation
+                    global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
+                    all_points.append(global_p)
+                else:
+                    all_points.append(p)
 
         # Write to PLY format
         with open(output_file, 'w') as f:
@@ -284,7 +322,7 @@ def convert_map_to_ply(map_dir, output_file):
             f.write("end_header\n")
             
             for p in all_points:
-                f.write(f"{p[0]} {p[1]} {p[2]}\n")
+                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
                 
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
