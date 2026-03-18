@@ -1,7 +1,7 @@
 """
 find_fid_test.py
 
-python3 find_fid_test.py <USERNAME> <PASSWORD> <DISTANCE_IN_METERS> 
+python3 find_fid_test.py <USERNAME> <PASSWORD> <DIRECTORY> <DISTANCE_IN_METERS> 
 
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
 
@@ -72,6 +72,7 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
+from unittest.mock import MagicMock
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
@@ -83,7 +84,8 @@ def main(argv):
     #positional args
     parser.add_argument("username",help="Username for Spot")
     parser.add_argument("password",help="Password for Spot")
-    parser.add_argument("dist",type=int,help="Distance in meters to stay in front of the tag")
+    parser.add_argument("map_dir",help="Directory where the map is stored on the robot")
+    parser.add_argument("dist",type=float,help="Distance in meters to stay in front of the tag")
     options=parser.parse_args(argv)
 
     #2. create sdk & authenticate
@@ -91,30 +93,35 @@ def main(argv):
 
     #create robot object since
     #robot=sdk.create_robot(ROBOT_IP)
-    #robot.authenticate(options.username,options.password)
     robot=MagicMock()
+    #robot.authenticate(options.username,options.password)
 
     print("Authenticating...")
     #robot.time_sync.wait_for_sync()
 
     #3. create clients
-    #lease_client=robot.ensure_client('lease')
+    """
+    lease_client=robot.ensure_client('lease')
+    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
+    graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
+    command_client=robot.ensure_client(RobotCommandClient.default_service_name)
+    robot_state_client=robot.ensure_client('robot-state')
+    map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
+    # In section #3: create clients
+    world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
+    """
     lease_client=MagicMock()
-    #recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
-    recording_client = MagicMock()
-    #graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
+    recording_client=MagicMock()
     graph_nav_client=MagicMock()
-    #command_client=robot.ensure_client(RobotCommandClient.default_service_name)
     command_client=MagicMock()
-    #robot_state_client=robot.ensure_client('robot-state')
     robot_state_client=MagicMock()
-    #map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
-    map_processing_client = MagicMock()
+    map_processing_client=MagicMock()
+    world_object_client=MagicMock()
 
     # 2. Build a fake state object with a hardcoded battery float
     mock_state = MagicMock()
     mock_state.power_state.locomotion_charge_percentage.value = 95.00
-
+    
     # 3. Tell the client to return this fake state when called
     robot_state_client.get_robot_state.return_value = mock_state
 
@@ -131,24 +138,130 @@ def main(argv):
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
-        time.sleep(2)
+        time.sleep(4)
 
-        navigate_to_fiducial(robot, options.tag_id, distance_meters=options.dist)
+        
+        # Upload the map to the robot
+        upload_map(graph_nav_client, options.map_dir)
+
+        navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
+
+
 
 def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
+    
+    print(f"Attempting to localize to Fiducial ID: {tag_id}...")
+    
+    # 1. Create an empty Localization message
+    # We don't need to guess where we are because the physical tag provides the absolute truth.
+    empty_guess = nav_pb2.Localization()
+    
+    try:
+        # 2. Use the Python Wrapper (Bypasses the namespace maze entirely)
+        # fiducial_init=4 corresponds to the integer value of FIDUCIAL_INIT_SPECIFIC
+        # use_fiducial_id takes the standard integer ID of your tag
+        graph_nav_client.set_localization(
+            initial_guess_localization=empty_guess,
+            fiducial_init=4,
+            use_fiducial_id=int(tag_id)
+        )
+        print("Localization successful.")
+    except Exception as e:
+        print(f"Localization failed: {e}")
+        return False
+
+    # 3. Define the goal pose 
+    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag.
+    goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
+
+    # 4. Command the navigation using the Python wrapper arguments
+    print("Navigating to front of tag...")
+    graph_nav_client.navigate_to_anchor(
+        seed_tform_goal=goal_pose.to_proto(),
+        goal_waypoint_id=""
+    )
+    
+    # 5. Monitor arrival (Basic polling)
+    while True:
+        status = graph_nav_client.get_localization_state().navigation_status
+        # 1 equals STATUS_REACHED_GOAL
+        if status == 1: 
+            print("Arrived perfectly in front of fiducial.")
+            break
+        time.sleep(1.0)
+    
+    return True
+
+def upload_map(graph_nav_client, map_dir):
+    # 1. Load and Upload the Graph (The Skeleton)
+    with open(os.path.join(map_dir, "graph"), "rb") as f:
+        graph_data = f.read()
+    graph = map_pb2.Graph()
+    graph.ParseFromString(graph_data)
+    
+    print("Uploading graph...")
+    graph_nav_client.upload_graph(graph=graph)
+
+    # 2. Upload Waypoint Snapshots (The Muscle)
+    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
+    waypoint_ids = [wp.snapshot_id for wp in graph.waypoints]
+
+    for snapshot_id in waypoint_ids:
+        snapshot_path = os.path.join(snapshot_dir, snapshot_id)
+        if os.path.exists(snapshot_path):
+            with open(snapshot_path, "rb") as f:
+                snapshot_data = f.read()
+            
+            snapshot = map_pb2.WaypointSnapshot()
+            snapshot.ParseFromString(snapshot_data)
+            
+            print(f"Uploading snapshot: {snapshot_id[:8]}...")
+            # Using the standard call; async is better for large maps
+            graph_nav_client.upload_waypoint_snapshot(snapshot)
+
+    print("Map upload complete.")
+
+if __name__ == "__main__":
+    if not main(sys.argv[1:]):
+        sys.exit(1)
+
+"""        
+#couldnt get this one to work, kept getting:
+    #localize_req.initial_guess = nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL
+    #AttributeError: module 'bosdyn.api.graph_nav.nav_pb2' has no attribute 'SetLocalizationRequest'
+    #def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
+    #graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     
     # 1. Tell the robot to localize specifically to the fiducial
     # This 'snaps' the robot's internal map to the physical tag
     print(f"Attempting to localize to Fiducial ID: {tag_id}...")
     
+    #dont use this below
     # We use an INITIAL_GUESS_FIDUCIAL to force a scan
     localize_req = graph_nav_pb2.SetLocalizationRequest(
-        initial_guess=graph_nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL,
+        # This correctly navigates the Protobuf hierarchy
+        #initial_guess=graph_nav_pb2.SetLocalizationRequest.InitialGuess.INITIAL_GUESS_FIDUCIAL,
+        #initial_guess=graph_nav_pb2.INITIAL_GUESS_FIDUCIAL,
+        initial_guess=nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL,
         fiducial_init=graph_nav_pb2.SetLocalizationRequest.FiducialInit(
             frame_name_fiducial=f"fiducial_{tag_id}"
         )
     )
+
+    # 1. Create the request using the graph_nav_pb2 module
+    localize_req = graph_nav_pb2.SetLocalizationRequest()
+
+    # 2. Assign the Enum value from the nav_pb2 module
+    # In many versions, it's nav_pb2.INITIAL_GUESS_FIDUCIAL
+    # If that fails, it's nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL
+    localize_req.initial_guess = nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL
+
+    # 3. Set the fiducial parameters
+    localize_req.fiducial_init.frame_name_fiducial = f"fiducial_{tag_id}"
+
+    # 4. Call the client
+    graph_nav_client.set_localization(localize_req)
     
     try:
         graph_nav_client.set_localization(localize_req)
@@ -184,3 +297,5 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         time.sleep(1.0)
     
     return True
+
+"""

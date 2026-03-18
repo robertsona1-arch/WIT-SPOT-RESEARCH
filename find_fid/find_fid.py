@@ -1,7 +1,7 @@
 """
 find_fid.py
 
-python3 find_fid.py <USERNAME> <PASSWORD> <DISTANCE_IN_METERS> 
+python3 find_fid.py <USERNAME> <PASSWORD> <MASTER_MAP_DIR> <DISTANCE_IN_METERS> 
 
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
 
@@ -83,7 +83,8 @@ def main(argv):
     #positional args
     parser.add_argument("username",help="Username for Spot")
     parser.add_argument("password",help="Password for Spot")
-    parser.add_argument("dist",type=int,help="Distance in meters to stay in front of the tag")
+    parser.add_argument("map_dir",help="Directory where the map is stored on the robot")
+    parser.add_argument("dist",type=float,help="Distance in meters to stay in front of the tag")
     options=parser.parse_args(argv)
 
     #2. create sdk & authenticate
@@ -103,6 +104,8 @@ def main(argv):
     command_client=robot.ensure_client(RobotCommandClient.default_service_name)
     robot_state_client=robot.ensure_client('robot-state')
     map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
+    # In section #3: create clients
+    world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
 
     lease_client.take()
     with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
@@ -117,56 +120,90 @@ def main(argv):
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
-        time.sleep(2)
+        time.sleep(4)
 
-        navigate_to_fiducial(robot, options.tag_id, distance_meters=options.dist)
+        
+        # Upload the map to the robot
+        upload_map(graph_nav_client, options.map_dir)
 
+        navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
+
+#old one is stored in test file
 def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     
-    # 1. Tell the robot to localize specifically to the fiducial
-    # This 'snaps' the robot's internal map to the physical tag
     print(f"Attempting to localize to Fiducial ID: {tag_id}...")
     
-    # We use an INITIAL_GUESS_FIDUCIAL to force a scan
-    localize_req = graph_nav_pb2.SetLocalizationRequest(
-        initial_guess=graph_nav_pb2.SetLocalizationRequest.INITIAL_GUESS_FIDUCIAL,
-        fiducial_init=graph_nav_pb2.SetLocalizationRequest.FiducialInit(
-            frame_name_fiducial=f"fiducial_{tag_id}"
-        )
-    )
+    # 1. Create an empty Localization message
+    # We don't need to guess where we are because the physical tag provides the absolute truth.
+    empty_guess = nav_pb2.Localization()
     
     try:
-        graph_nav_client.set_localization(localize_req)
+        # 2. Use the Python Wrapper (Bypasses the namespace maze entirely)
+        # fiducial_init=4 corresponds to the integer value of FIDUCIAL_INIT_SPECIFIC
+        # use_fiducial_id takes the standard integer ID of your tag
+        graph_nav_client.set_localization(
+            initial_guess_localization=empty_guess,
+            fiducial_init=4,
+            use_fiducial_id=int(tag_id)
+        )
         print("Localization successful.")
     except Exception as e:
         print(f"Localization failed: {e}")
         return False
 
-    # 2. Define the goal pose RELATIVE to the fiducial
-    # In the AprilTag frame: 
-    # +Z is 'Out' from the tag. 
-    # To face the tag, we want to be at +Z distance and rotate 180 degrees (pi radians)
-    goal_pose_in_fiducial_frame = SE3Pose(x=0, y=0, z=distance_meters, 
-                                          rot=math_helpers.Quat.from_yaw(math.pi))
+    # 3. Define the goal pose 
+    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag.
+    goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
 
-    # 3. Command the navigation
-    # We use navigate_to_anchor to move to a specific SE3Pose in the map
-    nav_to_cmd = graph_nav_pb2.NavigateToAnchorRequest(
-        seed_tform_goal=goal_pose_in_fiducial_frame.to_proto(),
-        goal_waypoint_id="", # Leaving empty because we are using an anchor (global coord)
-        command_id=1
+    # 4. Command the navigation using the Python wrapper arguments
+    print("Navigating to front of tag...")
+    graph_nav_client.navigate_to_anchor(
+        seed_tform_goal=goal_pose.to_proto(),
+        goal_waypoint_id=""
     )
     
-    graph_nav_client.navigate_to_anchor(nav_to_cmd)
-    
-    # 4. Monitor arrival (Basic polling)
-    print("Navigating to front of tag...")
+    # 5. Monitor arrival (Basic polling)
     while True:
         status = graph_nav_client.get_localization_state().navigation_status
-        if status == graph_nav_pb2.Iterable_NavStatus.STATUS_REACHED_GOAL:
+        # 1 equals STATUS_REACHED_GOAL
+        if status == 1: 
             print("Arrived perfectly in front of fiducial.")
             break
         time.sleep(1.0)
     
     return True
+
+
+def upload_map(graph_nav_client, map_dir):
+    # 1. Load and Upload the Graph (The Skeleton)
+    with open(os.path.join(map_dir, "graph"), "rb") as f:
+        graph_data = f.read()
+    graph = map_pb2.Graph()
+    graph.ParseFromString(graph_data)
+    
+    print("Uploading graph...")
+    graph_nav_client.upload_graph(graph=graph)
+
+    # 2. Upload Waypoint Snapshots (The Muscle)
+    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
+    waypoint_ids = [wp.snapshot_id for wp in graph.waypoints]
+
+    for snapshot_id in waypoint_ids:
+        snapshot_path = os.path.join(snapshot_dir, snapshot_id)
+        if os.path.exists(snapshot_path):
+            with open(snapshot_path, "rb") as f:
+                snapshot_data = f.read()
+            
+            snapshot = map_pb2.WaypointSnapshot()
+            snapshot.ParseFromString(snapshot_data)
+            
+            print(f"Uploading snapshot: {snapshot_id[:8]}...")
+            # Using the standard call; async is better for large maps
+            graph_nav_client.upload_waypoint_snapshot(snapshot)
+
+    print("Map upload complete.")
+
+if __name__ == "__main__":
+    if not main(sys.argv[1:]):
+        sys.exit(1)
