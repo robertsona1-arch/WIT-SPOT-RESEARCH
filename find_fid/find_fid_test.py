@@ -1,7 +1,7 @@
 """
 find_fid_test.py
 
-python3 find_fid_test.py <USERNAME> <PASSWORD> <DIRECTORY> <DISTANCE_IN_METERS> 
+python3 find_fid_test.py <USERNAME> <PASSWORD> <MASTER_MAP_DIR> <DISTANCE_IN_METERS> 
 
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
 
@@ -24,6 +24,7 @@ Last Updated: 3/16/2026
 
 from bosdyn.client.math_helpers import SE3Pose #new
 from bosdyn.api import world_object_pb2 #new
+from bosdyn.client.world_object import WorldObjectClient
 
 import argparse
 import logging
@@ -84,7 +85,7 @@ def main(argv):
     #positional args
     parser.add_argument("username",help="Username for Spot")
     parser.add_argument("password",help="Password for Spot")
-    parser.add_argument("map_dir",help="Directory where the map is stored on the robot")
+    parser.add_argument('map_dir',help="Directory where the map is stored on the robot")
     parser.add_argument("dist",type=float,help="Distance in meters to stay in front of the tag")
     options=parser.parse_args(argv)
 
@@ -148,7 +149,7 @@ def main(argv):
 
 
 
-def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
+"""def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     
     print(f"Attempting to localize to Fiducial ID: {tag_id}...")
@@ -176,9 +177,11 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
 
     # 4. Command the navigation using the Python wrapper arguments
+    cmd_duration=100.0
     print("Navigating to front of tag...")
     graph_nav_client.navigate_to_anchor(
         seed_tform_goal=goal_pose.to_proto(),
+        cmd_duration=cmd_duration,
         goal_waypoint_id=""
     )
     
@@ -192,6 +195,76 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         time.sleep(1.0)
     
     return True
+"""
+def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
+    graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
+    world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
+    
+    # 1. Localize (Snaps the Seed Frame to the Real World)
+    print(f"Localizing to Fiducial ID: {tag_id}...")
+    empty_guess = nav_pb2.Localization()
+    try:
+        graph_nav_client.set_localization(
+            initial_guess_localization=empty_guess,
+            fiducial_init=4,
+            use_fiducial_id=int(tag_id)
+        )
+        print("Localization successful.")
+    except Exception as e:
+        print(f"Localization failed: {e}")
+        return False
+
+    # 2. Get Current State (Seed -> Body)
+    localization_state = graph_nav_client.get_localization_state()
+    seed_tform_body = SE3Pose.from_proto(localization_state.localization.seed_tform_body)
+
+    # 3. Ask Perception for the Tag's location (Body -> Fiducial)
+    world_objects = world_object_client.list_world_objects(
+        object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
+    ).world_objects
+
+    fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+    if not fiducial_obj:
+        print("Error: Tag not currently visible to cameras.")
+        return False
+
+    body_tform_fiducial = get_a_tform_b(
+        fiducial_obj.transforms_snapshot, 
+        BODY_FRAME_NAME, 
+        fiducial_obj.apriltag_properties.frame_name_fiducial
+    )
+
+    # 4. Execute the SE(3) Transform Chain
+    # Map the fiducial into the global map frame
+    seed_tform_fiducial = seed_tform_body * body_tform_fiducial
+    
+    # Define our offset in the Fiducial's local frame
+    fiducial_tform_goal = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
+
+    # Multiply to get the absolute map coordinate for the target
+    seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
+
+    # 5. Navigate using the absolute map coordinate
+    print("Navigating to calculated map coordinate...")
+    try:
+        graph_nav_client.navigate_to_anchor(
+            seed_tform_goal=seed_tform_goal.to_proto(),
+            cmd_duration=30.0
+        )
+    except Exception as e:
+        print(f"Navigation rejected: {e}")
+        return False
+
+    # 6. Monitor arrival
+    while True:
+        status = graph_nav_client.get_localization_state().navigation_status
+        if status == 1: 
+            print("Arrived perfectly in front of fiducial.")
+            break
+        time.sleep(1.0)
+    
+    return True
+
 
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
