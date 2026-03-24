@@ -153,7 +153,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         return False
 
     # 3. Define the goal pose 
-    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag.
+    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag. Have quat as 0 for back facing
     goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
 
     # 4. Command the navigation using the Python wrapper arguments
