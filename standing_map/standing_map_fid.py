@@ -1,11 +1,10 @@
 """
-find_fid.py
+standing_map_fid.py
 
-python3 find_fid.py <USERNAME> <PASSWORD> <MASTER_MAP_DIR> <DISTANCE_IN_METERS> 
+python3 standing_map.py <USERNAME> <PASSWORD> <DIRECTORY> <MAST_DIR> <DIST_IN_M>
 
-Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
-
-This script navigates and faces the robot infront of a fiducial 
+This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
+The robot will navigate to the fiducial before starting recording. 
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
 This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
 Minimal AI was used to aid in syntax and structure
@@ -17,13 +16,9 @@ Written by Adam Robertson, Wentworth Institute of Technology, School of Engineer
 WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
-Date Created: 3/16/2026
-Last Updated: 3/16/2026
+Date Created: 3/24/2026
+Last Updated: 3/24/2026
 """
-
-
-from bosdyn.client.math_helpers import SE3Pose #new
-from bosdyn.api import world_object_pb2 #new
 
 import argparse
 import logging
@@ -58,7 +53,6 @@ from bosdyn.client.robot import Robot
 
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
-from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 # 1. CLIENTS (The "Doing" part)
 
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
@@ -72,20 +66,27 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
+from bosdyn.client.math_helpers import SE3Pose #new
+from bosdyn.api import world_object_pb2 #new
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
+
 
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
 
     #positional args
-    parser.add_argument("username",help="Username for Spot")
-    parser.add_argument("password",help="Password for Spot")
-    parser.add_argument("map_dir",help="Directory where the map is stored on the robot")
+    parser.add_argument('username',help='Spot Username')
+    parser.add_argument('password',help='Spot Password')
+    parser.add_argument('map_dir',help='Directory to save maps to')
+    parser.add_argument("mast_dir",help="Directory where the map is stored on the robot")
     parser.add_argument("dist",type=float,help="Distance in meters to stay in front of the tag")
+    
+
     options=parser.parse_args(argv)
+    
 
     #2. create sdk & authenticate
     sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
@@ -106,6 +107,13 @@ def main(argv):
     map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
     world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
 
+    #create directory
+    if not os.path.exists(options.map_dir):
+        os.makedirs(options.map_dir)
+
+    #4. acquire lease & execution
+
+    #forcefully take the lease:
     lease_client.take()
     with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
         print("\nbeginning\n")
@@ -119,13 +127,122 @@ def main(argv):
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
-        time.sleep(4)
+        time.sleep(2)
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.map_dir)
         navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
 
-#old one is stored in test file
+        for a in range(1, 11):
+            #battery check, won't run if less than 20%
+            if not check_batt_perc(robot_state_client,limit=20.0):
+                print(f"\nBattery below 20%. Stopping at N={a}.")
+                break
+                
+            fold_name=f"test_n_{a:02d}"
+            full_path=os.path.join(options.map_dir,fold_name)
+
+
+            if not os.path.exists(full_path):
+                os.makedirs(full_path)
+                
+            #graph_nav_client.clear_graph() got error saying call stop recording first
+            recording_client.start_recording()
+            print("\nStarting Recording\n")
+            time.sleep(0.1)
+
+            for b in range(a):
+                #snapshot
+                recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                #time.sleep(3)#need to have this so it goes on when its ready
+                print("\nCreating Waypoint\n")
+                time.sleep(3)
+
+            #stop and download
+            recording_client.stop_recording()
+            time.sleep(0.5)
+                
+            # Use the module-level helper, passing the directory and the client
+            graph_nav_client.write_graph_and_snapshots(full_path)
+
+            #convert
+            print(f"\n[N{a}]Converting to ply...\n")
+            ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
+            convert_map_to_ply(full_path,ply_name)
+            graph_nav_client.clear_graph()
+            
+    print("\nScript finished\n")
+
+#Functions
+def check_batt_perc(robot_state_client,limit=20.0):
+    """
+    Check battery percentage using protobuf path:
+    state.power_state.locomotion_charge_percentage.value
+    """
+    state=robot_state_client.get_robot_state()
+
+    #check if field exists
+    if not state.power_state.HasField('locomotion_charge_percentage'):
+        print("\nBattery percentage field not found, assuming sufficient charge\n")
+        return True
+    
+    #Access .value 
+    charge= state.power_state.locomotion_charge_percentage.value
+
+    print(f"\nBattery check, charge: {charge:.2f}%\n")
+
+    if charge < limit:
+        return False
+    return True
+
+
+def convert_map_to_ply(map_dir, output_file):
+    """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    
+    if not os.path.exists(snap_dir):
+        print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
+        return
+
+    all_points = []
+    
+    try:
+        files = os.listdir(snap_dir)
+        for filename in files:
+            # Ignore macOS hidden system files that crash the binary parser
+            if filename == '.DS_Store':
+                continue
+                
+            file_path = os.path.join(snap_dir, filename)
+            snapshot = map_pb2.WaypointSnapshot()
+            
+            with open(file_path, 'rb') as f:
+                snapshot.ParseFromString(f.read())
+                
+            cloud = snapshot.point_cloud
+            if not cloud.data:
+                continue
+                
+            iter_points = struct.iter_unpack('<3f', cloud.data)
+            for p in iter_points:
+                all_points.append(p)
+
+        # Write to PLY format
+        with open(output_file, 'w') as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write(f"element vertex {len(all_points)}\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            f.write("end_header\n")
+            
+            for p in all_points:
+                f.write(f"{p[0]} {p[1]} {p[2]}\n")
+                
+    except Exception as e:
+        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
+
 def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     
@@ -171,7 +288,6 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     
     return True
 
-
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
     with open(os.path.join(map_dir, "graph"), "rb") as f:
@@ -201,6 +317,7 @@ def upload_map(graph_nav_client, map_dir):
 
     print("Map upload complete.")
 
+    
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)
