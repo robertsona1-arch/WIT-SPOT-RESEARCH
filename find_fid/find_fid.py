@@ -196,7 +196,9 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
 
     # 2. Get Current State (Seed -> Body)
     localization_state = graph_nav_client.get_localization_state()
+    print(f"\nCurrent Seed -> Body Transform:\n{localization_state.localization.seed_tform_body}\n")
     seed_tform_body = SE3Pose.from_proto(localization_state.localization.seed_tform_body)
+    print(f"\nBody seed \n{seed_tform_body}\n")
 
     # 3. Ask Perception for the Tag's location (Body -> Fiducial)
     world_objects = world_object_client.list_world_objects(
@@ -204,6 +206,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     ).world_objects
 
     fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+    print(f"\nPerception reports {len(world_objects)} AprilTags in view.\n")
     if not fiducial_obj:
         print("Error: Tag not currently visible to cameras.")
         return False
@@ -213,16 +216,19 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         BODY_FRAME_NAME, 
         fiducial_obj.apriltag_properties.frame_name_fiducial
     )
-
+    print(f"\nBody -> Fiducial Transform:\n{body_tform_fiducial}\n")
     # 4. Execute the SE(3) Transform Chain
     # Map the fiducial into the global map frame
     seed_tform_fiducial = seed_tform_body * body_tform_fiducial
+    print(f"\nSeed -> Fiducial Transform:\n{seed_tform_fiducial}\n")
     
     # Define our offset in the Fiducial's local frame
     fiducial_tform_goal = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
+    print(f"\nFiducial -> Goal Transform:\n{fiducial_tform_goal}\n")
 
     # Multiply to get the absolute map coordinate for the target
     seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
+    print(f"\nSeed -> Goal Transform:\n{seed_tform_goal}\n")
 
     """# 5. Navigate using the absolute map coordinate
     print("Navigating to calculated map coordinate...")
