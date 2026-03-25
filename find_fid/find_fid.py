@@ -224,7 +224,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     # Multiply to get the absolute map coordinate for the target
     seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
 
-    # 5. Navigate using the absolute map coordinate
+    """# 5. Navigate using the absolute map coordinate
     print("Navigating to calculated map coordinate...")
     try:
         graph_nav_client.navigate_to_anchor(
@@ -241,6 +241,31 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         if status == 1: 
             print("Arrived perfectly in front of fiducial.")
             break
+        time.sleep(1.0)"""
+    
+    # Capture the navigation ID when you issue the command
+    print("Navigating to target coordinate...")
+    nav_id = graph_nav_client.navigate_to_anchor(
+        seed_tform_goal=seed_tform_goal.to_proto(),
+        cmd_duration=30.0
+    )
+
+    # Monitor the command using the correct feedback service
+    print("Monitoring navigation status...")
+    while True:
+        # Ask the path planner about this specific command
+        feedback = graph_nav_client.navigation_feedback(nav_id)
+        
+        if feedback.status == 1: # STATUS_REACHED_GOAL
+            print("Arrived perfectly in front of fiducial.")
+            break
+        elif feedback.status == 2: # STATUS_LOST
+            print("Error: Robot got lost. Check map alignment.")
+            return False
+        elif feedback.status == 3: # STATUS_STUCK
+            print("Error: Robot got stuck. Check for physical obstacles.")
+            return False
+            
         time.sleep(1.0)
     
     return True
