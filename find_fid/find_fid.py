@@ -176,7 +176,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     return True
 """
 
-def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
+def navigate_to_fiducial(robot, tag_id, dist_m=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
     
@@ -196,9 +196,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
 
     # 2. Get Current State (Seed -> Body)
     localization_state = graph_nav_client.get_localization_state()
-    print(f"\nCurrent Seed -> Body Transform:\n{localization_state.localization.seed_tform_body}\n")
     seed_tform_body = SE3Pose.from_proto(localization_state.localization.seed_tform_body)
-    print(f"\nBody seed \n{seed_tform_body}\n")
 
     # 3. Ask Perception for the Tag's location (Body -> Fiducial)
     world_objects = world_object_client.list_world_objects(
@@ -207,7 +205,6 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
 
     fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
     print(f"\nPerception reports {len(world_objects)} AprilTags in view.\n")
-    print(f"\nfiducial_obj:\n{fiducial_obj}\n")
     if not fiducial_obj:
         print("Error: Tag not currently visible to cameras.")
         return False
@@ -217,19 +214,30 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
         BODY_FRAME_NAME, 
         fiducial_obj.apriltag_properties.frame_name_fiducial
     )
-    print(f"\nBody -> Fiducial Transform:\n{body_tform_fiducial}\n")
+
     # 4. Execute the SE(3) Transform Chain
     # Map the fiducial into the global map frame
     seed_tform_fiducial = seed_tform_body * body_tform_fiducial
-    print(f"\nSeed -> Fiducial Transform:\n{seed_tform_fiducial}\n")
+
     
     # Define our offset in the Fiducial's local frame
-    fiducial_tform_goal = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
-    print(f"\nFiducial -> Goal Transform:\n{fiducial_tform_goal}\n")
+    fiducial_tform_goal = SE3Pose(x=dist_m, y=0.0, z=0.0, rot=Quat.from_yaw(math.pi))
+
 
     # Multiply to get the absolute map coordinate for the target
     seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
-    print(f"\nSeed -> Goal Transform:\n{seed_tform_goal}\n")
+    
+    # --- DIAGNOSTIC PRINT BLOCK ---
+    print("\n--- MATRIX DIAGNOSTICS ---")
+    print(f"Robot Current Pose (Seed Frame):  X: {seed_tform_body.x:.2f}, Y: {seed_tform_body.y:.2f}, Z: {seed_tform_body.z:.2f}")
+    print(f"Calculated Goal    (Seed Frame):  X: {seed_tform_goal.x:.2f}, Y: {seed_tform_goal.y:.2f}, Z: {seed_tform_goal.z:.2f}")
+    
+    # Calculate the straight-line distance between where we are and where we want to go
+    dx = seed_tform_goal.x - seed_tform_body.x
+    dy = seed_tform_goal.y - seed_tform_body.y
+    distance_to_goal = math.sqrt(dx**2 + dy**2)
+    print(f"Delta (Distance to Goal):         {distance_to_goal:.2f} meters")
+    print("--------------------------\n")
 
     """# 5. Navigate using the absolute map coordinate
     print("Navigating to calculated map coordinate...")
