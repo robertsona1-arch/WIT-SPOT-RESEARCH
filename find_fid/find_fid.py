@@ -274,26 +274,34 @@ def navigate_to_fiducial(robot, tag_id, dist_m):
         cmd_duration=30.0
     )
 
-    # Monitor the command using the correct feedback service
-    print("Monitoring navigation status...")
+    print("\nMonitoring navigation status...\n")
     while True:
-        # Ask the path planner about this specific command
         feedback = graph_nav_client.navigation_feedback(nav_id)
         
-        if feedback.status == 1: # STATUS_REACHED_GOAL
-            print("Arrived perfectly in front of fiducial.")
+        # We explicitly use the Protobuf variables now, no integers
+        if feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_REACHED_GOAL:
+            print("\nSUCCESS: Arrived perfectly in front of fiducial.\n")
             break
-        elif feedback.status == 2: # STATUS_LOST
-            print("Error: Robot got lost. Check map alignment.")
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_FOLLOWING_ROUTE:
+            # This is what '1' actually meant. Now we just let it keep walking.
+            print("\nRobot is walking to the target...", end="\r")
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_NO_ROUTE:
+            print("\nERROR: Path Planner cannot find a safe route to the target.")
             return False
-        elif feedback.status == 3: # STATUS_STUCK
-            print("Error: Robot got stuck. Check for physical obstacles.")
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_LOST:
+            print("\nERROR: Robot got lost. Check map alignment.")
+            return False
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_STUCK:
+            print("\nERROR: Robot got stuck. Check for physical obstacles.")
             return False
             
         time.sleep(1.0)
     
     return True
-
 
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
