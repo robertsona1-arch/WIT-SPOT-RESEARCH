@@ -95,21 +95,35 @@ def main(argv):
         command_client.robot_command(RobotCommandBuilder.synchro_stand_command())
         time.sleep(3)
 
-        # 2. THE FIX: Give the lease BACK to the tablet temporarily
-        print("\n--- LEASE HANDOFF ---")
-        print("On the Tablet, select 'HIJACK'. You should now have control.")
-        input("Once you are driving the robot, press ENTER here to start recording...")
+    # 2. THE FIX: Give the lease BACK to the tablet temporarily
+    print("\n--- LEASE HANDOFF ---")
+    print("On the Tablet, select 'HIJACK'. You should now have control.")
+    input("Once you are driving the robot, press ENTER here to start recording...")
 
-        # 3. Start Recording (The script can send commands even if it doesn't 'own' the body)
-        recording_client.start_recording()
+    # 3. Start Recording (The script can send commands even if it doesn't 'own' the body)
+    recording_client.start_recording()
         
-        print("RECORDING... Drive around the fiducial now.")
-        time.sleep(30)
+    print("RECORDING... Drive around the fiducial now.")
+    time.sleep(30)
 
-        recording_client.stop_recording()
-        print("Recording stopped. Downloading...")
-        graph_nav_client.write_graph_and_snapshots(options.map_dir)
+    # We use a loop to handle the 'NotReadyYetError'
+    max_retries = 10
+    for i in range(max_retries):
+        try:
+            recording_client.stop_recording()
+            print("Recording stopped successfully.")
+            break # Exit the loop if it works
+        except bosdyn.client.recording.NotReadyYetError:
+            print(f"Robot is still processing map (Attempt {i+1}/{max_retries}). Waiting 2s...")
+            time.sleep(2)
+        except Exception as e:
+            print(f"Critical error stopping recording: {e}")
+            break       
+    print("Recording stopped. Downloading...")
+    graph_nav_client.write_graph_and_snapshots(options.map_dir)
 
+    print("Stopping recording...")
+    
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

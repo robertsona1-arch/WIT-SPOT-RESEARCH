@@ -196,6 +196,7 @@ def main(argv):
     
     return True
 """
+
 def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
