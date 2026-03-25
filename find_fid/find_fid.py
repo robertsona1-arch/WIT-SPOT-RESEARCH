@@ -207,6 +207,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
 
     fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
     print(f"\nPerception reports {len(world_objects)} AprilTags in view.\n")
+    print(f"\nfiducial_obj:\n{fiducial_obj}\n")
     if not fiducial_obj:
         print("Error: Tag not currently visible to cameras.")
         return False
