@@ -124,7 +124,7 @@ def main(argv):
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.map_dir)
-        navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
+        navigate_to_fiducial(robot,tag_id, dist_m=options.dist)
 
 #old one is stored in test file
 """
@@ -176,7 +176,7 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     return True
 """
 
-def navigate_to_fiducial(robot, tag_id, dist_m=1.5):
+def navigate_to_fiducial(robot, tag_id, dist_m):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
     
@@ -221,11 +221,20 @@ def navigate_to_fiducial(robot, tag_id, dist_m=1.5):
 
     
     # Define our offset in the Fiducial's local frame
-    fiducial_tform_goal = SE3Pose(x=dist_m, y=0.0, z=0.0, rot=Quat.from_yaw(math.pi))
+    fiducial_tform_goal = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat.from_yaw(math.pi))
 
 
     # Multiply to get the absolute map coordinate for the target
     seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
+
+    # We rebuild the SE3Pose using the X/Y of the calculated goal, but 
+    # force the Z height to match the robot's current foot level.
+    seed_tform_goal = SE3Pose(
+        x=seed_tform_goal.x, 
+        y=seed_tform_goal.y, 
+        z=seed_tform_body.z, # Pull Z down to the floor
+        rot=seed_tform_goal.rot
+    )
     
     # --- DIAGNOSTIC PRINT BLOCK ---
     print("\n--- MATRIX DIAGNOSTICS ---")
