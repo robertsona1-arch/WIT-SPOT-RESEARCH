@@ -22,8 +22,8 @@ Last Updated: 3/16/2026
 """
 
 
-from bosdyn.client.math_helpers import SE3Pose #new
-from bosdyn.api import world_object_pb2 #new
+from bosdyn.client.math_helpers import SE2Pose #new
+from bosdyn.api import world_object_pb2, basic_command_pb2#new
 from bosdyn.client.world_object import WorldObjectClient
 
 import argparse
@@ -146,6 +146,7 @@ def main(argv):
         upload_map(graph_nav_client, options.map_dir)
 
         navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
+        fine_align(robot, tag_id, dist=options.dist)
 
 
 
@@ -266,6 +267,62 @@ def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
     
     return True
 
+def fine_align(robot, tag_id, dist):
+    command_client = robot.ensure_client(RobotCommandClient.default_service_name)
+    world_object_client = robot.ensure_client('world-object')
+    
+    print("\n--- INITIATING PHASE 2: PRECISION ALIGNMENT ---")
+    
+    # 1. Get a fresh look at the tag to eliminate any previous travel drift
+    world_objects = world_object_client.list_world_objects(
+        object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
+    ).world_objects
+    
+    fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+    if not fiducial_obj:
+        print("Error: Lost sight of tag. Cannot perform precision alignment.")
+        return False
+
+    # 2. Extract the transform directly into the ODOM frame
+    tag_frame_name = fiducial_obj.apriltag_properties.frame_name_fiducial
+    odom_tform_fiducial = get_a_tform_b(
+        fiducial_obj.transforms_snapshot, 
+        ODOM_FRAME_NAME, 
+        tag_frame_name
+    )
+
+    # 3. Calculate the Goal 
+    # distance_meters is on X, yaw is 0.0 to face it perfectly
+    fid_tform_goal = SE3Pose(x=dist, y=0.0, z=0.0, rot=Quat.from_yaw(0.0))
+    odom_tform_goal = odom_tform_fiducial * fid_tform_goal
+
+    # 4. Flatten the SE(3) pose to SE(2) 
+    # This strips out pitch, roll, and Z-height so the robot doesn't try to crouch or tilt
+    goal_se2 = SE2Pose(odom_tform_goal.x, odom_tform_goal.y, odom_tform_goal.rot.to_yaw())
+
+    # 5. Build the Trajectory Command
+    print(f"Executing micro-adjustments to X:{goal_se2.x:.3f}, Y:{goal_se2.y:.3f}")
+    command = RobotCommandBuilder.trajectory_command(
+        goal_x=goal_se2.x,
+        goal_y=goal_se2.y,
+        goal_heading=goal_se2.angle,
+        frame_name=ODOM_FRAME_NAME,
+        params=RobotCommandBuilder.mobility_params(stair_hint=False) # Keep footprint flat
+    )
+    
+    # 6. Issue Command and Block until perfectly aligned
+    cmd_id = command_client.robot_command(command)
+    
+    while True:
+        feedback = command_client.robot_command_feedback(cmd_id)
+        mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
+        
+        # We poll the specific SE2 trajectory status
+        if mobility_feedback.se2_trajectory_feedback.status == basic_command_pb2.SE2TrajectoryCommand.Feedback.STATUS_AT_GOAL:
+            print("SUCCESS: Sub-centimeter alignment achieved.")
+            break
+            
+        time.sleep(0.5)
 
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)

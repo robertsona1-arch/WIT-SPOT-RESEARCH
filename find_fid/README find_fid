@@ -1,0 +1,18 @@
+README find_fid
+
+This script will take spot and orientate it in front of a fiducial at a set distnace
+
+It uses graph nav first to find the fiducial and get it within a large margin of error
+Then use command client to get within a few centimeters of where it is supposed to be
+
+
+fine_align:
+
+1. Take new picture of the fiducial
+2. Transform from fiducial frame to robot ODOM frame
+3. Transform from current frame to goal frame
+4. Flatten, get rid of z axis
+5. 
+Odom frame override: use get_a_tform_b(..., ODOM_FRAME_NAME, tag_frame_name), by bypassing seed frame, strip out SLAM drift. 
+SE(2) Flattening: Convert 3D SE(3) matrix into 2D SE(2) matrix. If fiducial is cooked, SE(3) will try to rotate to match fiducials rotation. Flattening makes sure spot is level. 
+Feedback loop: unlike graph nav, RobotCommandClient STATUS_AT_GOAL means the robot has mechanically settled its footprint exactly on the requested coordinate, within the margin of error(1-2 cm)
