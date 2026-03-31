@@ -75,6 +75,7 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
+from bosdyn.api import geometry_pb2, trajectory_pb2 
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
