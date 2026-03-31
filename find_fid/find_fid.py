@@ -3,6 +3,8 @@ find_fid.py
 
 python3 find_fid.py <USERNAME> <PASSWORD> <MASTER_MAP_DIR> <DISTANCE_IN_METERS> 
 
+Use 2 meters away
+
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
 
 This script navigates and faces the robot infront of a fiducial 
@@ -18,7 +20,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 3/16/2026
-Last Updated: 3/24/2026
+Last Updated: 3/31/2026
 """
 
 
@@ -124,10 +126,10 @@ def main(argv):
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.map_dir)
-        navigate_to_fiducial(robot,tag_id, dist_m=options.dist)
-        fine_align(robot, tag_id, dist=options.dist)
+        nav_to_fid(robot,tag_id, dist_m=options.dist)
+        fine_align(robot, tag_id, dist=options.dist, iter=100)
 
-def navigate_to_fiducial(robot, tag_id, dist_m):
+def nav_to_fid(robot, tag_id, dist_m):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
     
@@ -166,25 +168,24 @@ def navigate_to_fiducial(robot, tag_id, dist_m):
         fiducial_obj.apriltag_properties.frame_name_fiducial
     )
 
-    # 4. Execute the SE(3) Transform Chain
-    # Map the fiducial into the global map frame
+    #project tag into global map frame
     seed_tform_fiducial = seed_tform_body * body_tform_fiducial
 
-    
-    # Define our offset in the Fiducial's local frame
-    fiducial_tform_goal = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat.from_yaw(math.pi))
+    # 4. Push 1.5m straight out from the tag (No rotation yet)
+    tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat())
+    raw_seed_goal = seed_tform_body * tag_z_out
 
+    # 5. Calculate absolute map heading to look AT the tag
+    dy = seed_tform_fiducial.y - raw_seed_goal.y
+    dx = seed_tform_fiducial.x - raw_seed_goal.x
+    heading_rads = math.atan2(dy, dx)
 
-    # Multiply to get the absolute map coordinate for the target
-    seed_tform_goal = seed_tform_fiducial * fiducial_tform_goal
-
-    # We rebuild the SE3Pose using the X/Y of the calculated goal, but 
-    # force the Z height to match the robot's current foot level.
+    # 6. Build the final Seed Pose (Grounded Z + Trigonometric Yaw)
     seed_tform_goal = SE3Pose(
-        x=seed_tform_goal.x, 
-        y=seed_tform_goal.y, 
-        z=seed_tform_body.z, # Pull Z down to the floor
-        rot=seed_tform_goal.rot
+        x=raw_seed_goal.x,
+        y=raw_seed_goal.y,
+        z=seed_tform_body.z, 
+        rot=Quat.from_yaw(heading_rads) 
     )
     
     # --- DIAGNOSTIC PRINT BLOCK ---
@@ -235,7 +236,6 @@ def navigate_to_fiducial(robot, tag_id, dist_m):
     
     return True
 
-
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
     with open(os.path.join(map_dir, "graph"), "rb") as f:
@@ -265,65 +265,79 @@ def upload_map(graph_nav_client, map_dir):
 
     print("Map upload complete.")
 
-def fine_align(robot, tag_id, dist):
+def fine_align(robot, tag_id, dist,iter):
+    print("\n--- INITIATING PHASE 2: CLOSED-LOOP ALIGNMENT ---")
     command_client = robot.ensure_client(RobotCommandClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
-    
-    print("\n--- INITIATING PHASE 2: PRECISION ALIGNMENT ---")
-    
-    # 1. Get a fresh look at the tag to eliminate any previous travel drift
-    world_objects = world_object_client.list_world_objects(
-        object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
-    ).world_objects
-    
-    fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
-    if not fiducial_obj:
-        print("Error: Lost sight of tag. Cannot perform precision alignment.")
-        return False
+    a=0
+    dist_thrsh=0.075
+    deg_thrsh=2.5
 
-    # 2. Extract the transform directly into the ODOM frame
-    tag_frame_name = fiducial_obj.apriltag_properties.frame_name_fiducial
-    odom_tform_fiducial = get_a_tform_b(
-        fiducial_obj.transforms_snapshot, 
-        ODOM_FRAME_NAME, 
-        tag_frame_name
-    )
+    for attempt in range(iter):
+        if a%5==0 and a!=0:
+            dist_thrsh+=0.025
+            deg_thrsh+=1.0
 
-    # 3. Calculate the Goal 
-    # distance_meters is on X, yaw is 0.0 to face it perfectly
-    fid_tform_goal = SE3Pose(x=dist, y=0.0, z=0.0, rot=Quat.from_yaw(0.0))
-    odom_tform_goal = odom_tform_fiducial * fid_tform_goal
-
-    # 4. Flatten the SE(3) pose to SE(2) 
-    # This strips out pitch, roll, and Z-height so the robot doesn't try to crouch or tilt
-    goal_se2 = SE2Pose(odom_tform_goal.x, odom_tform_goal.y, odom_tform_goal.rot.to_yaw())
-
-    # 5. Build the Trajectory Command
-    print(f"\nExecuting micro-adjustments to X:{goal_se2.x:.3f}, Y:{goal_se2.y:.3f}\n")
-    command = RobotCommandBuilder.synchro_se2_trajectory_point_command(
-        goal_x=goal_se2.x,
-        goal_y=goal_se2.y,
-        goal_heading=goal_se2.angle,
-        frame_name=ODOM_FRAME_NAME,
-        params=RobotCommandBuilder.mobility_params(stair_hint=False) # Keep footprint flat
-    )
-    
-    # 6. Issue Command and Block until perfectly aligned
-    cmd_id = command_client.robot_command(command)
-    
-    while True:
-        print("\nstart of loop\n")
-        feedback = command_client.robot_command_feedback(cmd_id)
-        mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
+        print(f"\nAlignment Pass {attempt + 1}/{iter}")
         
-        # We poll the specific SE2 trajectory status
-        if mobility_feedback.se2_trajectory_feedback.status == basic_command_pb2.SE2TrajectoryCommand.Feedback.STATUS_AT_GOAL:
-            print("SUCCESS: Sub-centimeter alignment achieved.")
-            break
-            
-        time.sleep(0.5)
+        # 1. Take a fresh picture of the tag
+        world_objects = world_object_client.list_world_objects(
+            object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
+        ).world_objects
+        
+        fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+        if not fiducial_obj:
+            print("Error: Lost sight of tag during visual servoing.")
+            return False
 
+        # 2. Extract Transform to ODOM
+        tag_frame_name = fiducial_obj.apriltag_properties.frame_name_fiducial
+        odom_tform_fiducial = get_a_tform_b(fiducial_obj.transforms_snapshot, ODOM_FRAME_NAME, tag_frame_name)
+
+        # 3. Calculate target and heading
+        tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist, rot=Quat())
+        raw_goal_odom = odom_tform_fiducial * tag_z_out
+        
+        dy = odom_tform_fiducial.y - raw_goal_odom.y
+        dx = odom_tform_fiducial.x - raw_goal_odom.x
+        heading_rads = math.atan2(dy, dx)
+
+        # 4. Calculate Current Error vs Goal
+        odom_tform_body = get_a_tform_b(fiducial_obj.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+        
+        dist_error = math.sqrt((raw_goal_odom.x - odom_tform_body.x)**2 + (raw_goal_odom.y - odom_tform_body.y)**2)
+        yaw_error = abs(heading_rads - odom_tform_body.rot.to_yaw())
+        
+        print(f"Current Error -> Distance: {dist_error:.4f}m | Heading: {math.degrees(yaw_error):.2f} deg")
+        
+        # 5. The Threshold Check (e.g., within 1.5cm and 1.5 degrees)
+        if dist_error < dist_thrsh and math.degrees(yaw_error) < deg_thrsh:
+            print("SUCCESS: Experimental alignment tolerances achieved.")
+            return True
+
+        # 6. Execute Correction Command
+        goal_se2 = SE2Pose(raw_goal_odom.x, raw_goal_odom.y, heading_rads)
+        command = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x=goal_se2.x, goal_y=goal_se2.y, goal_heading=goal_se2.angle,
+            frame_name=ODOM_FRAME_NAME, params=RobotCommandBuilder.mobility_params(stair_hint=False)
+        )
+        
+        cmd_id = command_client.robot_command(command, end_time_secs=time.time() + 15.0)
+        
+        # Block until the micro-adjustment settles before taking the next picture
+        start_time = time.time()
+        while time.time() - start_time < 10.0:
+            feedback = command_client.robot_command_feedback(cmd_id)
+            status = feedback.feedback.synchronized_feedback.mobility_command_feedback.se2_trajectory_feedback.status
+            if status == basic_command_pb2.SE2TrajectoryCommand.Feedback.STATUS_AT_GOAL:
+                time.sleep(1.0) # Let the camera physically stabilize
+                break
+            time.sleep(0.5)
+        a+=1
+
+    print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
     return True
+
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

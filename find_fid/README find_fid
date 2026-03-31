@@ -18,3 +18,5 @@ SE(2) Flattening: Convert 3D SE(3) matrix into 2D SE(2) matrix. If fiducial is c
 Feedback loop: unlike graph nav, RobotCommandClient STATUS_AT_GOAL means the robot has mechanically settled its footprint exactly on the requested coordinate, within the margin of error(1-2 cm)
 
 world_object_client = robot.ensure_client(WorldObjectClient.default_service_name) pass the class attribute instead of the raw string
+
+Trajectory commands bypass the graphnav mirco planner
