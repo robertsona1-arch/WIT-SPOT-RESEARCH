@@ -236,35 +236,6 @@ def nav_to_fid(robot, tag_id, dist_m):
     
     return True
 
-def upload_map(graph_nav_client, map_dir):
-    # 1. Load and Upload the Graph (The Skeleton)
-    with open(os.path.join(map_dir, "graph"), "rb") as f:
-        graph_data = f.read()
-    graph = map_pb2.Graph()
-    graph.ParseFromString(graph_data)
-    
-    print("Uploading graph...")
-    graph_nav_client.upload_graph(graph=graph)
-
-    # 2. Upload Waypoint Snapshots (The Muscle)
-    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
-    waypoint_ids = [wp.snapshot_id for wp in graph.waypoints]
-
-    for snapshot_id in waypoint_ids:
-        snapshot_path = os.path.join(snapshot_dir, snapshot_id)
-        if os.path.exists(snapshot_path):
-            with open(snapshot_path, "rb") as f:
-                snapshot_data = f.read()
-            
-            snapshot = map_pb2.WaypointSnapshot()
-            snapshot.ParseFromString(snapshot_data)
-            
-            print(f"Uploading snapshot: {snapshot_id[:8]}...")
-            # Using the standard call; async is better for large maps
-            graph_nav_client.upload_waypoint_snapshot(snapshot)
-
-    print("Map upload complete.")
-
 def fine_align(robot, tag_id, dist,iter):
     print("\n--- INITIATING PHASE 2: CLOSED-LOOP ALIGNMENT ---")
     command_client = robot.ensure_client(RobotCommandClient.default_service_name)
@@ -337,6 +308,35 @@ def fine_align(robot, tag_id, dist,iter):
 
     print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
     return True
+
+def upload_map(graph_nav_client, map_dir):
+    # 1. Load and Upload the Graph (The Skeleton)
+    with open(os.path.join(map_dir, "graph"), "rb") as f:
+        graph_data = f.read()
+    graph = map_pb2.Graph()
+    graph.ParseFromString(graph_data)
+    
+    print("Uploading graph...")
+    graph_nav_client.upload_graph(graph=graph)
+
+    # 2. Upload Waypoint Snapshots (The Muscle)
+    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
+    waypoint_ids = [wp.snapshot_id for wp in graph.waypoints]
+
+    for snapshot_id in waypoint_ids:
+        snapshot_path = os.path.join(snapshot_dir, snapshot_id)
+        if os.path.exists(snapshot_path):
+            with open(snapshot_path, "rb") as f:
+                snapshot_data = f.read()
+            
+            snapshot = map_pb2.WaypointSnapshot()
+            snapshot.ParseFromString(snapshot_data)
+            
+            print(f"Uploading snapshot: {snapshot_id[:8]}...")
+            # Using the standard call; async is better for large maps
+            graph_nav_client.upload_waypoint_snapshot(snapshot)
+
+    print("Map upload complete.")
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
