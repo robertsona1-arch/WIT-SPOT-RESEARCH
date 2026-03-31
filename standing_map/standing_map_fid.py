@@ -54,7 +54,7 @@ from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
 
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 # 1. CLIENTS (The "Doing" part)
 
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
@@ -68,7 +68,7 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
-from bosdyn.client.math_helpers import SE3Pose #new
+from bosdyn.client.math_helpers import SE3Pose,SE2Pose #new
 from bosdyn.api import world_object_pb2, basic_command_pb2#new
 from bosdyn.client.world_object import WorldObjectClient
 
