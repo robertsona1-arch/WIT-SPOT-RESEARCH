@@ -71,7 +71,9 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
-from bosdyn.api import geometry_pb2, trajectory_pb2 
+from bosdyn.api import geometry_pb2, trajectory_pb2
+
+from standing_map.standing_map_fid import fine_align 
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
@@ -136,8 +138,8 @@ def main(argv):
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.mast_dir)
-        navigate_to_fiducial(robot,tag_id, distance_meters=options.dist)
-
+        nav_to_fid(robot,tag_id, distance_meters=options.dist)
+        fine_align(robot, tag_id, options.dist, iter=100)
 
         for a in range(1, options.end_n + 1):
             control_height(command_client,-0.1,robot_state_client)
@@ -341,6 +343,186 @@ def convert_map_to_ply(map_dir, output_file,n):
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
 
+def nav_to_fid(robot, tag_id, dist_m):
+    graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
+    world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
+    
+    # 1. Localize (Snaps the Seed Frame to the Real World)
+    print(f"Localizing to Fiducial ID: {tag_id}...")
+    empty_guess = nav_pb2.Localization()
+    try:
+        graph_nav_client.set_localization(
+            initial_guess_localization=empty_guess,
+            fiducial_init=4,
+            use_fiducial_id=int(tag_id)
+        )
+        print("Localization successful.")
+    except Exception as e:
+        print(f"Localization failed: {e}")
+        return False
+
+    # 2. Get Current State (Seed -> Body)
+    localization_state = graph_nav_client.get_localization_state()
+    seed_tform_body = SE3Pose.from_proto(localization_state.localization.seed_tform_body)
+
+    # 3. Ask Perception for the Tag's location (Body -> Fiducial)
+    world_objects = world_object_client.list_world_objects(
+        object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
+    ).world_objects
+
+    fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+    print(f"\nPerception reports {len(world_objects)} AprilTags in view.\n")
+    if not fiducial_obj:
+        print("Error: Tag not currently visible to cameras.")
+        return False
+
+    body_tform_fiducial = get_a_tform_b(
+        fiducial_obj.transforms_snapshot, 
+        BODY_FRAME_NAME, 
+        fiducial_obj.apriltag_properties.frame_name_fiducial
+    )
+
+    #project tag into global map frame
+    seed_tform_fiducial = seed_tform_body * body_tform_fiducial
+
+    # 4. Push 1.5m straight out from the tag (No rotation yet)
+    tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat())
+    raw_seed_goal = seed_tform_body * tag_z_out
+
+    # 5. Calculate absolute map heading to look AT the tag
+    dy = seed_tform_fiducial.y - raw_seed_goal.y
+    dx = seed_tform_fiducial.x - raw_seed_goal.x
+    heading_rads = math.atan2(dy, dx)
+
+    # 6. Build the final Seed Pose (Grounded Z + Trigonometric Yaw)
+    seed_tform_goal = SE3Pose(
+        x=raw_seed_goal.x,
+        y=raw_seed_goal.y,
+        z=seed_tform_body.z, 
+        rot=Quat.from_yaw(heading_rads) 
+    )
+    
+    # --- DIAGNOSTIC PRINT BLOCK ---
+    print("\n--- MATRIX DIAGNOSTICS ---")
+    print(f"Robot Current Pose (Seed Frame):  X: {seed_tform_body.x:.2f}, Y: {seed_tform_body.y:.2f}, Z: {seed_tform_body.z:.2f}")
+    print(f"Calculated Goal    (Seed Frame):  X: {seed_tform_goal.x:.2f}, Y: {seed_tform_goal.y:.2f}, Z: {seed_tform_goal.z:.2f}")
+    
+    # Calculate the straight-line distance between where we are and where we want to go
+    dx = seed_tform_goal.x - seed_tform_body.x
+    dy = seed_tform_goal.y - seed_tform_body.y
+    distance_to_goal = math.sqrt(dx**2 + dy**2)
+    print(f"Delta (Distance to Goal):         {distance_to_goal:.2f} meters")
+    print("--------------------------\n")
+    
+    # Capture the navigation ID when you issue the command
+    print("Navigating to target coordinate...")
+    nav_id = graph_nav_client.navigate_to_anchor(
+        seed_tform_goal=seed_tform_goal.to_proto(),
+        cmd_duration=30.0
+    )
+
+    print("Monitoring navigation status...")
+    while True:
+        feedback = graph_nav_client.navigation_feedback(nav_id)
+        
+        # We explicitly use the Protobuf variables now, no integers
+        if feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_REACHED_GOAL:
+            print("\nGraphNav success: Arrived in front of fiducial.")
+            break
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_FOLLOWING_ROUTE:
+            # This is what '1' actually meant. Now we just let it keep walking.
+            print("Robot is walking to the target...", end="\r")
+             
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_NO_ROUTE:
+            print("\nERROR: Path Planner cannot find a safe route to the target.")
+            return False
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_LOST:
+            print("\nERROR: Robot got lost. Check map alignment.")
+            return False
+            
+        elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_STUCK:
+            print("\nERROR: Robot got stuck. Check for physical obstacles.")
+            return False
+            
+        time.sleep(1.0)
+    
+    return True
+
+def fine_align(robot, tag_id, dist,iter):
+    print("\n--- INITIATING PHASE 2: CLOSED-LOOP ALIGNMENT ---")
+    command_client = robot.ensure_client(RobotCommandClient.default_service_name)
+    world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
+    a=0
+    dist_thrsh=0.075
+    deg_thrsh=2.5
+
+    for attempt in range(iter):
+        if a%5==0 and a!=0:
+            dist_thrsh+=0.025
+            deg_thrsh+=1.0
+
+        print(f"\nAlignment Pass {attempt + 1}/{iter}")
+        
+        # 1. Take a fresh picture of the tag
+        world_objects = world_object_client.list_world_objects(
+            object_type=[world_object_pb2.WORLD_OBJECT_APRILTAG]
+        ).world_objects
+        
+        fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
+        if not fiducial_obj:
+            print("Error: Lost sight of tag during visual servoing.")
+            return False
+
+        # 2. Extract Transform to ODOM
+        tag_frame_name = fiducial_obj.apriltag_properties.frame_name_fiducial
+        odom_tform_fiducial = get_a_tform_b(fiducial_obj.transforms_snapshot, ODOM_FRAME_NAME, tag_frame_name)
+
+        # 3. Calculate target and heading
+        tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist, rot=Quat())
+        raw_goal_odom = odom_tform_fiducial * tag_z_out
+        
+        dy = odom_tform_fiducial.y - raw_goal_odom.y
+        dx = odom_tform_fiducial.x - raw_goal_odom.x
+        heading_rads = math.atan2(dy, dx)
+
+        # 4. Calculate Current Error vs Goal
+        odom_tform_body = get_a_tform_b(fiducial_obj.transforms_snapshot, ODOM_FRAME_NAME, BODY_FRAME_NAME)
+        
+        dist_error = math.sqrt((raw_goal_odom.x - odom_tform_body.x)**2 + (raw_goal_odom.y - odom_tform_body.y)**2)
+        yaw_error = abs(heading_rads - odom_tform_body.rot.to_yaw())
+        
+        print(f"Current Error -> Distance: {dist_error:.4f}m | Heading: {math.degrees(yaw_error):.2f} deg")
+        
+        # 5. The Threshold Check (e.g., within 1.5cm and 1.5 degrees)
+        if dist_error < dist_thrsh and math.degrees(yaw_error) < deg_thrsh:
+            print("SUCCESS: Experimental alignment tolerances achieved.")
+            return True
+
+        # 6. Execute Correction Command
+        goal_se2 = SE2Pose(raw_goal_odom.x, raw_goal_odom.y, heading_rads)
+        command = RobotCommandBuilder.synchro_se2_trajectory_point_command(
+            goal_x=goal_se2.x, goal_y=goal_se2.y, goal_heading=goal_se2.angle,
+            frame_name=ODOM_FRAME_NAME, params=RobotCommandBuilder.mobility_params(stair_hint=False)
+        )
+        
+        cmd_id = command_client.robot_command(command, end_time_secs=time.time() + 15.0)
+        
+        # Block until the micro-adjustment settles before taking the next picture
+        start_time = time.time()
+        while time.time() - start_time < 10.0:
+            feedback = command_client.robot_command_feedback(cmd_id)
+            status = feedback.feedback.synchronized_feedback.mobility_command_feedback.se2_trajectory_feedback.status
+            if status == basic_command_pb2.SE2TrajectoryCommand.Feedback.STATUS_AT_GOAL:
+                time.sleep(1.0) # Let the camera physically stabilize
+                break
+            time.sleep(0.5)
+        a+=1
+
+    print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
+    return True
+
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
     with open(os.path.join(map_dir, "graph"), "rb") as f:
@@ -369,51 +551,6 @@ def upload_map(graph_nav_client, map_dir):
             graph_nav_client.upload_waypoint_snapshot(snapshot)
 
     print("Map upload complete.")
-
-def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
-    graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
-    
-    print(f"Attempting to localize to Fiducial ID: {tag_id}...")
-    
-    # 1. Create an empty Localization message
-    # We don't need to guess where we are because the physical tag provides the absolute truth.
-    empty_guess = nav_pb2.Localization()
-    
-    try:
-        # 2. Use the Python Wrapper (Bypasses the namespace maze entirely)
-        # fiducial_init=4 corresponds to the integer value of FIDUCIAL_INIT_SPECIFIC
-        # use_fiducial_id takes the standard integer ID of your tag
-        graph_nav_client.set_localization(
-            initial_guess_localization=empty_guess,
-            fiducial_init=4,
-            use_fiducial_id=int(tag_id)
-        )
-        print("Localization successful.")
-    except Exception as e:
-        print(f"Localization failed: {e}")
-        return False
-
-    # 3. Define the goal pose 
-    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag. Have quat as 0 for back facing
-    goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
-
-    # 4. Command the navigation using the Python wrapper arguments
-    print("Navigating to front of tag...")
-    graph_nav_client.navigate_to_anchor(
-        seed_tform_goal=goal_pose.to_proto(),
-        goal_waypoint_id=""
-    )
-    
-    # 5. Monitor arrival (Basic polling)
-    while True:
-        status = graph_nav_client.get_localization_state().navigation_status
-        # 1 equals STATUS_REACHED_GOAL
-        if status == 1: 
-            print("Arrived perfectly in front of fiducial.")
-            break
-        time.sleep(1.0)
-    
-    return True
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
