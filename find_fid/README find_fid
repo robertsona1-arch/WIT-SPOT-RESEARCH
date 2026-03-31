@@ -16,3 +16,5 @@ fine_align:
 Odom frame override: use get_a_tform_b(..., ODOM_FRAME_NAME, tag_frame_name), by bypassing seed frame, strip out SLAM drift. 
 SE(2) Flattening: Convert 3D SE(3) matrix into 2D SE(2) matrix. If fiducial is cooked, SE(3) will try to rotate to match fiducials rotation. Flattening makes sure spot is level. 
 Feedback loop: unlike graph nav, RobotCommandClient STATUS_AT_GOAL means the robot has mechanically settled its footprint exactly on the requested coordinate, within the margin of error(1-2 cm)
+
+world_object_client = robot.ensure_client(WorldObjectClient.default_service_name) pass the class attribute instead of the raw string

@@ -127,56 +127,6 @@ def main(argv):
         navigate_to_fiducial(robot,tag_id, dist_m=options.dist)
         fine_align(robot, tag_id, dist=options.dist)
 
-#old one is stored in test file
-"""
-def navigate_to_fiducial(robot, tag_id, distance_meters=1.5):
-    graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
-    
-    print(f"Attempting to localize to Fiducial ID: {tag_id}...")
-    
-    # 1. Create an empty Localization message
-    # We don't need to guess where we are because the physical tag provides the absolute truth.
-    empty_guess = nav_pb2.Localization()
-    
-    try:
-        # 2. Use the Python Wrapper (Bypasses the namespace maze entirely)
-        # fiducial_init=4 corresponds to the integer value of FIDUCIAL_INIT_SPECIFIC
-        # use_fiducial_id takes the standard integer ID of your tag
-        graph_nav_client.set_localization(
-            initial_guess_localization=empty_guess,
-            fiducial_init=4,
-            use_fiducial_id=int(tag_id)
-        )
-        print("Localization successful.")
-    except Exception as e:
-        print(f"Localization failed: {e}")
-        return False
-
-    # 3. Define the goal pose 
-    # +Z is 'Out' from the tag face. We rotate 180 degrees (pi) to face the tag. Have quat as 0 for back facing
-    goal_pose = SE3Pose(x=0.0, y=0.0, z=distance_meters, rot=Quat.from_yaw(math.pi))
-
-    # 4. Command the navigation using the Python wrapper arguments
-    cmd_dir=100
-    print("Navigating to front of tag...")
-    graph_nav_client.navigate_to_anchor(
-        seed_tform_goal=goal_pose.to_proto(),
-        cmd_dir=cmd_dir,
-        goal_waypoint_id=""
-    )
-    
-    # 5. Monitor arrival (Basic polling)
-    while True:
-        status = graph_nav_client.get_localization_state().navigation_status
-        # 1 equals STATUS_REACHED_GOAL
-        if status == 1: 
-            print("Arrived perfectly in front of fiducial.")
-            break
-        time.sleep(1.0)
-    
-    return True
-"""
-
 def navigate_to_fiducial(robot, tag_id, dist_m):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
@@ -248,25 +198,6 @@ def navigate_to_fiducial(robot, tag_id, dist_m):
     distance_to_goal = math.sqrt(dx**2 + dy**2)
     print(f"Delta (Distance to Goal):         {distance_to_goal:.2f} meters")
     print("--------------------------\n")
-
-    """# 5. Navigate using the absolute map coordinate
-    print("Navigating to calculated map coordinate...")
-    try:
-        graph_nav_client.navigate_to_anchor(
-            seed_tform_goal=seed_tform_goal.to_proto(),
-            cmd_duration=30.0
-        )
-    except Exception as e:
-        print(f"Navigation rejected: {e}")
-        return False
-
-    # 6. Monitor arrival
-    while True:
-        status = graph_nav_client.get_localization_state().navigation_status
-        if status == 1: 
-            print("Arrived perfectly in front of fiducial.")
-            break
-        time.sleep(1.0)"""
     
     # Capture the navigation ID when you issue the command
     print("Navigating to target coordinate...")
@@ -275,40 +206,19 @@ def navigate_to_fiducial(robot, tag_id, dist_m):
         cmd_duration=30.0
     )
 
-    """
-    # Monitor the command using the correct feedback service
-    print("Monitoring navigation status...")
-    while True:
-        # Ask the path planner about this specific command
-        feedback = graph_nav_client.navigation_feedback(nav_id)
-        
-        if feedback.status == 1: # STATUS_REACHED_GOAL
-            print("Arrived perfectly in front of fiducial.")
-            break
-        elif feedback.status == 2: # STATUS_LOST
-            print("Error: Robot got lost. Check map alignment.")
-            return False
-        elif feedback.status == 3: # STATUS_STUCK
-            print("Error: Robot got stuck. Check for physical obstacles.")
-            return False
-            
-        time.sleep(1.0)
-    
-    return True"""
-
     print("Monitoring navigation status...")
     while True:
         feedback = graph_nav_client.navigation_feedback(nav_id)
         
         # We explicitly use the Protobuf variables now, no integers
         if feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_REACHED_GOAL:
-            print("SUCCESS: Arrived perfectly in front of fiducial.")
+            print("\nGraphNav success: Arrived in front of fiducial.")
             break
             
         elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_FOLLOWING_ROUTE:
             # This is what '1' actually meant. Now we just let it keep walking.
             print("Robot is walking to the target...", end="\r")
-            
+             
         elif feedback.status == graph_nav_pb2.NavigationFeedbackResponse.STATUS_NO_ROUTE:
             print("\nERROR: Path Planner cannot find a safe route to the target.")
             return False
@@ -357,7 +267,7 @@ def upload_map(graph_nav_client, map_dir):
 
 def fine_align(robot, tag_id, dist):
     command_client = robot.ensure_client(RobotCommandClient.default_service_name)
-    world_object_client = robot.ensure_client('world-object')
+    world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)
     
     print("\n--- INITIATING PHASE 2: PRECISION ALIGNMENT ---")
     
@@ -389,8 +299,8 @@ def fine_align(robot, tag_id, dist):
     goal_se2 = SE2Pose(odom_tform_goal.x, odom_tform_goal.y, odom_tform_goal.rot.to_yaw())
 
     # 5. Build the Trajectory Command
-    print(f"Executing micro-adjustments to X:{goal_se2.x:.3f}, Y:{goal_se2.y:.3f}")
-    command = RobotCommandBuilder.trajectory_command(
+    print(f"\nExecuting micro-adjustments to X:{goal_se2.x:.3f}, Y:{goal_se2.y:.3f}\n")
+    command = RobotCommandBuilder.synchro_se2_trajectory_point_command(
         goal_x=goal_se2.x,
         goal_y=goal_se2.y,
         goal_heading=goal_se2.angle,
@@ -402,6 +312,7 @@ def fine_align(robot, tag_id, dist):
     cmd_id = command_client.robot_command(command)
     
     while True:
+        print("\nstart of loop\n")
         feedback = command_client.robot_command_feedback(cmd_id)
         mobility_feedback = feedback.feedback.synchronized_feedback.mobility_command_feedback
         
