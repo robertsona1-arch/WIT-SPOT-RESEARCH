@@ -20,6 +20,10 @@ Date Created: 3/24/2026
 Last Updated: 3/24/2026
 """
 
+from bosdyn.client.math_helpers import SE2Pose #new
+from bosdyn.api import world_object_pb2, basic_command_pb2#new
+from bosdyn.client.world_object import WorldObjectClient
+
 import argparse
 import logging
 import os
@@ -50,14 +54,16 @@ from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
 import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
+
 from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 # 1. CLIENTS (The "Doing" part)
 
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2, trajectory_pb2 
+from bosdyn.api import geometry_pb2
 from bosdyn.client.map_processing import MapProcessingServiceClient
 
 # 2. APIS/PROTOS (The "Data" part)
@@ -65,8 +71,7 @@ from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
 from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
-from bosdyn.client.math_helpers import SE3Pose #new
-from bosdyn.api import world_object_pb2 #new
+from bosdyn.api import geometry_pb2, trajectory_pb2 
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
