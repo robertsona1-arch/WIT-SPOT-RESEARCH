@@ -1,7 +1,7 @@
 """
 rotating_map_transforms_fid.py
 
-python3 rotating_map_transforms_fid.py <USERNAME> <PASSWORD> <DIRECTORY> <MASTER_MAP_DIR> <DISTANCE_IN_METERS> <START_N> --end_n <END_N>
+python3 rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MAP_DIR> --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
 use dist=3.5
 
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
@@ -89,10 +89,10 @@ def main(argv):
     #positional args
     parser.add_argument('username',help='Spot Username')
     parser.add_argument('password',help='Spot Password')
-    parser.add_argument('map_dir',help='Directory to save maps to')
-    parser.add_argument('mast_dir',help='Master Map Directory')
-    parser.add_argument('dist',type=float,help='distance in meters to fiducial')
-    parser.add_argument('start_n',type=int,help='Number of initial rotations to perform')
+    parser.add_argument('--map_dir',help='Directory to save maps to')
+    parser.add_argument('--mast_dir',help='Master Map Directory')
+    parser.add_argument('--dist',type=float,help='distance in meters to fiducial')
+    parser.add_argument('--start_n',type=int,help='Number of initial rotations to perform',default=1)
 
     #optional end N
     parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=8)
