@@ -7,6 +7,11 @@ import argparse
 import struct
 from bosdyn.api.graph_nav import map_pb2
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+from leo_funcs import write_ply
+
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument('map_dir', help='Path to the folder containing the downloaded map')
@@ -53,21 +58,6 @@ def main(argv):
     # 4. Write to PLY
     out_file = options.output if options.output else os.path.join(options.map_dir, "converted.ply")
     write_ply(out_file, all_points)
-
-def write_ply(filename, points):
-    with open(filename, 'w') as f:
-        f.write("ply\n")
-        f.write("format ascii 1.0\n")
-        f.write(f"element vertex {len(points)}\n")
-        f.write("property float x\n")
-        f.write("property float y\n")
-        f.write("property float z\n")
-        f.write("end_header\n")
-        
-        for p in points:
-            f.write(f"{p[0]} {p[1]} {p[2]}\n")
-            
-    print(f"Success! Saved to: {filename}")
 
 if __name__ == '__main__':
     if not main(sys.argv[1:]):

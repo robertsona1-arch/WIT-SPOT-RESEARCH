@@ -69,6 +69,11 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
@@ -181,109 +186,7 @@ def main(argv):
             
             
     print("\nScript finished\n")
-
-#Functions
-def check_batt_perc(robot_state_client,limit=20.0):
-    """
-    Check battery percentage using protobuf path:
-    state.power_state.locomotion_charge_percentage.value
-    """
-    state=robot_state_client.get_robot_state()
-
-    #check if field exists
-    if not state.power_state.HasField('locomotion_charge_percentage'):
-        print("\nBattery percentage field not found, assuming sufficient charge\n")
-        return True
-    
-    #Access .value 
-    charge= state.power_state.locomotion_charge_percentage.value
-
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
-
-    if charge < limit:
-        return False
-    return True
-
-def turn_relative(command_client,robot_state_client,yaw_deg):
-    yaw_rad=math.radians(yaw_deg)
-    transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
-    odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
-    new_yaw=odom_t_body.angle+yaw_rad
-
-    #set speed limits using geometry api first
-    speed_limit=geometry_pb2.SE2VelocityLimit(
-        max_vel=geometry_pb2.SE2Velocity(
-            linear=geometry_pb2.Vec2(x=0.5,y=0.5),angular=1.0
-        )
-    )
-
-    #initialize params and attach speed limits
-    params=spot_command_pb2.MobilityParams(vel_limit=speed_limit)
-
-    se2_pose = geometry_pb2.SE2Pose(
-        position=geometry_pb2.Vec2(
-            x=odom_t_body.x, y=odom_t_body.y)
-            ,angle=new_yaw)
-
-    duration=abs(yaw_rad)/0.8
-    if duration<2.0: duration=2.0
-
-    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(
-        se2_pose,
-        frame_name=ODOM_FRAME_NAME,
-        params=params  # This is the object built on standalone lines earlier
-    )
-    command_client.robot_command(cmd, end_time_secs=time.time()+duration)
-
-    time.sleep(duration+0.5)
-
-def convert_map_to_ply(map_dir, output_file):
-    """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
-    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
-    
-    if not os.path.exists(snap_dir):
-        print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
-        return
-
-    all_points = []
-    
-    try:
-        files = os.listdir(snap_dir)
-        for filename in files:
-            # Ignore macOS hidden system files that crash the binary parser
-            if filename == '.DS_Store':
-                continue
-                
-            file_path = os.path.join(snap_dir, filename)
-            snapshot = map_pb2.WaypointSnapshot()
-            
-            with open(file_path, 'rb') as f:
-                snapshot.ParseFromString(f.read())
-                
-            cloud = snapshot.point_cloud
-            if not cloud.data:
-                continue
-                
-            iter_points = struct.iter_unpack('<3f', cloud.data)
-            for p in iter_points:
-                all_points.append(p)
-
-        # Write to PLY format
-        with open(output_file, 'w') as f:
-            f.write("ply\n")
-            f.write("format ascii 1.0\n")
-            f.write(f"element vertex {len(all_points)}\n")
-            f.write("property float x\n")
-            f.write("property float y\n")
-            f.write("property float z\n")
-            f.write("end_header\n")
-            
-            for p in all_points:
-                f.write(f"{p[0]} {p[1]} {p[2]}\n")
-                
-    except Exception as e:
-        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
-        
+       
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

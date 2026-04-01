@@ -65,6 +65,11 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from leo_funcs import check_batt_perc, control_height
 
 def main(argv):
     #1. setup positional arguments
@@ -153,54 +158,6 @@ def main(argv):
             time.sleep(0.5)
             
     print("\nScript finished\n")
-
-#Functions
-def check_batt_perc(robot_state_client,limit=20.0):
-    """
-    Check battery percentage using protobuf path:
-    state.power_state.locomotion_charge_percentage.value
-    """
-    state=robot_state_client.get_robot_state()
-
-    #check if field exists
-    if not state.power_state.HasField('locomotion_charge_percentage'):
-        print("\nBattery percentage field not found, assuming sufficient charge\n")
-        return True
-    
-    #Access .value 
-    charge= state.power_state.locomotion_charge_percentage.value
-
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
-
-    if charge < limit:
-        return False
-    return True
-
-def control_height(command_client,height,robot_state_client):
-
-    #0.0 is neutral, 0.1 is high, -0.1 is low, height in meters
-    z_offset=height
-
-    #build the pose (position+rotation), w=1 is neutral quaternion
-    footprint_R_body=geometry_pb2.SE3Pose(
-        position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
-        rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
-    )
-
-    #create control parameters
-    body_control=spot_command_pb2.BodyControlParams(
-        base_offset_rt_footprint=footprint_R_body
-    )
-
-    #create mobility params and attach body control
-    mobility_params=spot_command_pb2.MobilityParams(body_control=body_control)
-
-    #build and send stand command  
-    stand_cmd=RobotCommandBuilder.synchro_stand_command(params=mobility_params)
-    command_client.robot_command(stand_cmd)
-
-    #wait for stabilization
-    time.sleep(2.0)
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):

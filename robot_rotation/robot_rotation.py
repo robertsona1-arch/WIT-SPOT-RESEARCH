@@ -60,6 +60,11 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 
 from bosdyn.client import math_helpers
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from leo_funcs import check_batt_perc, turn_relative
 ROBOT_IP ="192.168.80.3"
 
 def main(argv):
@@ -149,62 +154,6 @@ def main(argv):
             
             
     print("\nScript finished\n")
-
-#Functions
-def check_batt_perc(robot_state_client,limit=20.0):
-    """
-    Check battery percentage using protobuf path:
-    state.power_state.locomotion_charge_percentage.value
-    """
-    state=robot_state_client.get_robot_state()
-
-    #check if field exists
-    if not state.power_state.HasField('locomotion_charge_percentage'):
-        print("\nBattery percentage field not found, assuming sufficient charge\n")
-        return True
-    
-    #Access .value 
-    charge= state.power_state.locomotion_charge_percentage.value
-
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
-
-    if charge < limit:
-        return False
-    return True
-
-def turn_relative(command_client,robot_state_client,yaw_deg):
-    yaw_rad=math.radians(yaw_deg)
-    transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
-    odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
-    new_yaw=odom_t_body.angle+yaw_rad
-
-    #set speed limits using geometry api first
-    speed_limit=geometry_pb2.SE2VelocityLimit(
-        max_vel=geometry_pb2.SE2Velocity(
-            linear=geometry_pb2.Vec2(x=0.5,y=0.5),angular=1.0
-        )
-    )
-
-    #initalize params and attach speed limits
-    params=spot_command_pb2.MobilityParams(vel_limit=speed_limit)
-
-    # 1. Package raw coordinates into an SE2Pose protobuf object
-    se2_pose = geometry_pb2.SE2Pose(
-        position=geometry_pb2.Vec2(
-            x=odom_t_body.x, y=odom_t_body.y)
-            ,angle=new_yaw)
-
-    duration=abs(yaw_rad)/0.8
-    if duration<2.0: duration=2.0
-
-    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(
-        se2_pose,
-        frame_name=ODOM_FRAME_NAME,
-        params=params  # This is the object built on standalone lines earlier
-    )
-    command_client.robot_command(cmd, end_time_secs=time.time()+duration)
-
-    time.sleep(duration+0.5)
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):

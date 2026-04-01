@@ -1,3 +1,28 @@
+"""
+leo_funcs.py
+
+This file contains all the functions used in any script. 
+At the top are all the imports 
+Below this is how to use 
+"""
+"""
+Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
+WIT SPOT Research Group
+Prof. Latif 
+Contributors: Patrick Woolf, Geoffery Siebert
+Date Created: 4/1/2026
+Last Updated: 4/1/2026
+"""
+"""
+# Dynamically point Python to the root repository folder
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+# Now you can import your custom functions cleanly
+from leo_funcs import calculate_offset, fine_align
+
+"""
 #general stuff
 import argparse
 import logging
@@ -226,7 +251,7 @@ def nav_to_fid(robot, tag_id, dist_m):
 
     # 4. Push 1.5m straight out from the tag (No rotation yet)
     tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat())
-    raw_seed_goal = seed_tform_body * tag_z_out
+    raw_seed_goal = seed_tform_fiducial * tag_z_out
 
     # 5. Calculate absolute map heading to look AT the tag
     dy = seed_tform_fiducial.y - raw_seed_goal.y

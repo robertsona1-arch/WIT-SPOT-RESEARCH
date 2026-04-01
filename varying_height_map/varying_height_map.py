@@ -67,7 +67,11 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
 
+from leo_funcs import check_batt_perc, convert_map_to_ply,control_height
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
@@ -177,155 +181,6 @@ def main(argv):
             graph_nav_client.clear_graph()
             
     print("\nScript finished\n")
-
-#Functions
-def check_batt_perc(robot_state_client,limit=20.0):
-    """
-    Check battery percentage using protobuf path:
-    state.power_state.locomotion_charge_percentage.value
-    """
-    state=robot_state_client.get_robot_state()
-
-    #check if field exists
-    if not state.power_state.HasField('locomotion_charge_percentage'):
-        print("\nBattery percentage field not found, assuming sufficient charge\n")
-        return True
-    
-    #Access .value 
-    charge= state.power_state.locomotion_charge_percentage.value
-
-    print(f"\nBatter check, charge: {charge:.2f}%\n")
-
-    if charge < limit:
-        return False
-    return True
-
-def control_height(command_client,height,robot_state_client):
-
-    #0.0 is neutral, 0.1 is high, -0.1 is low, height in meters
-    z_offset=height
-
-    #new pose function
-    pose=geometry_pb2.SE3Pose(
-        position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
-        rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
-    )
-
-    #wrap pose in trajectory point
-    point=trajectory_pb2.SE3TrajectoryPoint(
-        pose=pose,
-        time_since_reference=google.protobuf.duration_pb2.Duration(seconds=0) #0 second to reach the target height immediately
-    )
-
-    #create trajectory w/single point
-    traj=trajectory_pb2.SE3Trajectory(points=[point])
-    """
-    #build the pose (position+rotation), w=1 is neutral quaternion
-    footprint_R_body=geometry_pb2.SE3Pose(
-        position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
-        rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
-    )"""
-
-    #create control parameters
-    body_control=spot_command_pb2.BodyControlParams(
-        base_offset_rt_footprint=traj
-    )
-
-    #create mobility params and attach body control
-    mobility_params=spot_command_pb2.MobilityParams(body_control=body_control)
-
-    #build and send stand command  
-    stand_cmd=RobotCommandBuilder.synchro_stand_command(params=mobility_params)
-    command_client.robot_command(stand_cmd)
-
-    #wait for stabilization
-    time.sleep(2.0)
-
-def convert_map_to_ply(map_dir, output_file,n): 
-    """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
-    #removed the tranformation from frame 1, don't need it
-    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
-    if n!=1:
-        graph_path=os.path.join(map_dir, 'graph')
-    
-    
-    if not os.path.exists(snap_dir):
-        print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
-        return
-    
-    if n!=1:
-        if not os.path.exists(graph_path):
-            print(f"\n graph address error\n")
-            return
-
-    if n!=1:
-        #New, read graph to get transformations
-        graph=map_pb2.Graph()
-        with open(graph_path,'rb') as f:
-            graph.ParseFromString(f.read())
-
-        #Map each waypoint ID to its specifc KO transform
-        waypoint_transforms={}
-        for wp in graph.waypoints:
-            #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
-            #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
-            #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
-            wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
-            ko_tform_wp=wp_tform_ko.inverse()#take the inverse
-            waypoint_transforms[wp.snapshot_id]=ko_tform_wp #changed from wp.id because it couldnt find the graphs
-
-    all_points = []
-    
-    try:
-        files = os.listdir(snap_dir)
-        for filename in files:
-            # Ignore macOS hidden system files that crash the binary parser
-            if filename == '.DS_Store':
-                continue
-                
-            file_path = os.path.join(snap_dir, filename)
-            snapshot = map_pb2.WaypointSnapshot()
-            
-            with open(file_path, 'rb') as f:
-                snapshot.ParseFromString(f.read())
-                
-            cloud = snapshot.point_cloud
-            if not cloud.data:
-                continue
-
-            if n!=1:
-                #get specific transform for this snapshot
-                if snapshot.id not in waypoint_transforms:
-                    print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
-                    continue
-                ko_tform_wp=waypoint_transforms[snapshot.id]
-
-            #unpack and transform points
-            iter_points = struct.iter_unpack('<3f', cloud.data)
-            for p in iter_points:
-                if n!=1:
-                    #apply transformation matrix to align the frame w/ origin frame
-                    #transformation_point handles 3d vector rotation+translation
-                    global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
-                    all_points.append(global_p)
-                else:
-                    all_points.append(p)
-
-        # Write to PLY format
-        with open(output_file, 'w') as f:
-            f.write("ply\n")
-            f.write("format ascii 1.0\n")
-            f.write(f"element vertex {len(all_points)}\n")
-            f.write("property float x\n")
-            f.write("property float y\n")
-            f.write("property float z\n")
-            f.write("end_header\n")
-            
-            for p in all_points:
-                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
-                
-    except Exception as e:
-        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
