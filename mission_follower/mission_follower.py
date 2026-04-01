@@ -71,7 +71,7 @@ def main(argv):
 
         for a in range(total_laps):
             if a==0:
-
+                break
             print(f"\nStarting lap {a+1}\n")
 
             #go to end pt

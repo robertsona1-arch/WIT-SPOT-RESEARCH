@@ -1,25 +1,4 @@
-"""
-standing_map_fid.py
-
-python3 standing_map.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5
-
-This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
-The robot will navigate to the fiducial before starting recording. 
-THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
-This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
-Minimal AI was used to aid in syntax and structure
-"""
-
-
-"""
-Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
-WIT SPOT Research Group
-Prof. Latif 
-Contributors: Patrick Woolf, Geoffery Siebert
-Date Created: 3/24/2026
-Last Updated: 4/1/2026
-"""
-
+#general stuff
 import argparse
 import logging
 import os
@@ -29,154 +8,39 @@ import struct #added for ply conversion
 import traceback
 import math
 
+#bd specific imports
 import google.protobuf.timestamp_pb2
 #import graph_nav_util
-import grpc
-from google.protobuf import wrappers_pb2 as wrappers
-
 import bosdyn.client.channel 
 import bosdyn.client.util
-from bosdyn.api.graph_nav import map_pb2, map_processing_pb2, recording_pb2
 import bosdyn.client.graph_nav 
+import bosdyn.client
+
+from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2, robot_command_pb2 as generic_robot_command_pb2, trajectory_pb2, world_object_pb2, basic_command_pb2
+from bosdyn.api.gps import gps_pb2
+from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2, map_processing_pb2, recording_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client.graph_nav import GraphNavClient
 from bosdyn.client.map_processing import MapProcessingServiceClient #check this
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.recording import GraphNavRecordingServiceClient
-from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2
-from bosdyn.api.gps import gps_pb2
-from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
-
-#following not in sdk examples
-import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
-
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
-# 1. CLIENTS (The "Doing" part)
-
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2
 from bosdyn.client.map_processing import MapProcessingServiceClient
-
-# 2. APIS/PROTOS (The "Data" part)
-from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-
 from bosdyn.client import math_helpers
-from bosdyn.client.math_helpers import SE3Pose,SE2Pose #new
-from bosdyn.api import world_object_pb2, basic_command_pb2#new
+from bosdyn.client.math_helpers import SE2Pose #new
 from bosdyn.client.world_object import WorldObjectClient
 
-ROBOT_IP ="192.168.80.3"
-tag_id=1
+#google imports
+import grpc
 
-
-def main(argv):
-    parser = argparse.ArgumentParser()
-    # Positional Arguments (Terminal order matters)
-    parser.add_argument('username', help='Spot Username')
-    parser.add_argument('password', help='Spot Password')
-    
-    # Optional/Named Arguments (Requires terminal flags)
-    parser.add_argument('--map_dir', help='Directory to save maps to', required=True)
-    parser.add_argument('--mast_dir', help='Directory where the map is stored on the robot', required=True)
-    parser.add_argument('--dist', type=float, help='Distance in meters', required=True)
-    parser.add_argument('--end_n',type=int,help='end n',required=False)
-
-    # Execute the parse
-    options = parser.parse_args(argv)
-    
-
-    #2. create sdk & authenticate
-    sdk = bosdyn.client.create_standard_sdk('RotatingMapExample')
-
-    #create robot object since
-    robot=sdk.create_robot(ROBOT_IP)
-    robot.authenticate(options.username,options.password)
-
-    print("Authenticating...")
-
-    robot.time_sync.wait_for_sync()
-
-    #3. create clients
-    lease_client=robot.ensure_client('lease')
-    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
-    graph_nav_client=robot.ensure_client(GraphNavClient.default_service_name)
-    command_client=robot.ensure_client(RobotCommandClient.default_service_name)
-    robot_state_client=robot.ensure_client('robot-state')
-    map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
-    world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
-
-    #create directory
-    if not os.path.exists(options.map_dir):
-        os.makedirs(options.map_dir)
-
-    #4. acquire lease & execution
-
-    #forcefully take the lease:
-    lease_client.take()
-    with LeaseKeepAlive(lease_client, must_acquire=False, return_at_exit=True):
-        print("\nbeginning\n")
-        #clear estops and power on motors locally
-        robot.time_sync.wait_for_sync()
-        if not robot.is_powered_on():
-            print("\nPowering on leo\n")
-            robot.power_on(timeout_sec=20)
-
-        #Command the robot to stand
-        print("\nCommanding robot to stand...\n")
-        stand=RobotCommandBuilder.synchro_stand_command()
-        command_client.robot_command(stand)
-        time.sleep(2)
-
-        # Upload the map to the robot
-        upload_map(graph_nav_client, options.mast_dir)
-        nav_to_fid(robot,tag_id, dist_m=options.dist)
-        fine_align(robot,tag_id, dist=options.dist,iter=100)
-
-
-        for a in range(1, options.end_n+1):
-            #battery check, won't run if less than 20%
-            if not check_batt_perc(robot_state_client,limit=20.0):
-                print(f"\nBattery below 20%. Stopping at N={a}.")
-                break
-                
-            fold_name=f"test_n_{a:02d}"
-            full_path=os.path.join(options.map_dir,fold_name)
-
-
-            if not os.path.exists(full_path):
-                os.makedirs(full_path)
-                
-            #graph_nav_client.clear_graph() got error saying call stop recording first
-            recording_client.start_recording()
-            print("\nStarting Recording\n")
-            time.sleep(0.1)
-
-            for b in range(a):
-                #snapshot
-                recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                #time.sleep(3)#need to have this so it goes on when its ready
-                print("\nCreating Waypoint\n")
-                time.sleep(3)
-
-            #stop and download
-            recording_client.stop_recording()
-            time.sleep(0.5)
-                
-            # Use the module-level helper, passing the directory and the client
-            graph_nav_client.write_graph_and_snapshots(full_path)
-
-            #convert
-            print(f"\n[N{a}]Converting to ply...\n")
-            ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-            convert_map_to_ply(full_path,ply_name)
-            graph_nav_client.clear_graph()
-            
-    print("\nScript finished\n")
+from google.protobuf import wrappers_pb2 as wrappers
 
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -199,13 +63,71 @@ def check_batt_perc(robot_state_client,limit=20.0):
         return False
     return True
 
-def convert_map_to_ply(map_dir, output_file):
+def turn_relative(command_client,robot_state_client,yaw_deg):
+    yaw_rad=math.radians(yaw_deg)
+    transforms=robot_state_client.get_robot_state().kinematic_state.transforms_snapshot
+    odom_t_body=get_se2_a_tform_b(transforms, ODOM_FRAME_NAME, GRAV_ALIGNED_BODY_FRAME_NAME)
+    new_yaw=odom_t_body.angle+yaw_rad
+
+    #set speed limits using geometry api first
+    speed_limit=geometry_pb2.SE2VelocityLimit(
+        max_vel=geometry_pb2.SE2Velocity(
+            linear=geometry_pb2.Vec2(x=0.5,y=0.5),angular=1.0
+        )
+    )
+
+    #initialize params and attach speed limits
+    params=spot_command_pb2.MobilityParams(vel_limit=speed_limit)
+
+    se2_pose = geometry_pb2.SE2Pose(
+        position=geometry_pb2.Vec2(
+            x=odom_t_body.x, y=odom_t_body.y)
+            ,angle=new_yaw)
+
+    duration=abs(yaw_rad)/0.8
+    if duration<2.0: duration=2.0
+
+    cmd = RobotCommandBuilder.synchro_se2_trajectory_command(
+        se2_pose,
+        frame_name=ODOM_FRAME_NAME,
+        params=params  # This is the object built on standalone lines earlier
+    )
+    command_client.robot_command(cmd, end_time_secs=time.time()+duration)
+
+    time.sleep(duration+0.5)
+
+def convert_map_to_ply(map_dir, output_file,n): 
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    #removed the tranformation from frame 1, don't need it
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    if n!=1:
+        graph_path=os.path.join(map_dir, 'graph')
+    
     
     if not os.path.exists(snap_dir):
         print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
         return
+    
+    if n!=1:
+        if not os.path.exists(graph_path):
+            print(f"\n graph address error\n")
+            return
+
+    if n!=1:
+        #New, read graph to get transformations
+        graph=map_pb2.Graph()
+        with open(graph_path,'rb') as f:
+            graph.ParseFromString(f.read())
+
+        #Map each waypoint ID to its specifc KO transform
+        waypoint_transforms={}
+        for wp in graph.waypoints:
+            #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
+            #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
+            #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
+            wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+            ko_tform_wp=wp_tform_ko.inverse()#take the inverse
+            waypoint_transforms[wp.snapshot_id]=ko_tform_wp #changed from wp.id because it couldnt find the graphs
 
     all_points = []
     
@@ -225,10 +147,24 @@ def convert_map_to_ply(map_dir, output_file):
             cloud = snapshot.point_cloud
             if not cloud.data:
                 continue
-                
+
+            if n!=1:
+                #get specific transform for this snapshot
+                if snapshot.id not in waypoint_transforms:
+                    print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
+                    continue
+                ko_tform_wp=waypoint_transforms[snapshot.id]
+
+            #unpack and transform points
             iter_points = struct.iter_unpack('<3f', cloud.data)
             for p in iter_points:
-                all_points.append(p)
+                if n!=1:
+                    #apply transformation matrix to align the frame w/ origin frame
+                    #transformation_point handles 3d vector rotation+translation
+                    global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
+                    all_points.append(global_p)
+                else:
+                    all_points.append(p)
 
         # Write to PLY format
         with open(output_file, 'w') as f:
@@ -241,7 +177,7 @@ def convert_map_to_ply(map_dir, output_file):
             f.write("end_header\n")
             
             for p in all_points:
-                f.write(f"{p[0]} {p[1]} {p[2]}\n")
+                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
                 
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
@@ -426,9 +362,9 @@ def fine_align(robot, tag_id, dist,iter):
     print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
     return True
 
-def upload_map(graph_nav_client, mast_dir):
+def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
-    with open(os.path.join(mast_dir, "graph"), "rb") as f:
+    with open(os.path.join(map_dir, "graph"), "rb") as f:
         graph_data = f.read()
     graph = map_pb2.Graph()
     graph.ParseFromString(graph_data)
@@ -437,7 +373,7 @@ def upload_map(graph_nav_client, mast_dir):
     graph_nav_client.upload_graph(graph=graph)
 
     # 2. Upload Waypoint Snapshots (The Muscle)
-    snapshot_dir = os.path.join(mast_dir, "waypoint_snapshots")
+    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
     waypoint_ids = [wp.snapshot_id for wp in graph.waypoints]
 
     for snapshot_id in waypoint_ids:
@@ -454,7 +390,44 @@ def upload_map(graph_nav_client, mast_dir):
             graph_nav_client.upload_waypoint_snapshot(snapshot)
 
     print("Map upload complete.")
-   
-if __name__ == "__main__":
-    if not main(sys.argv[1:]):
-        sys.exit(1)
+
+def write_ply(filename, points):
+    with open(filename, 'w') as f:
+        f.write("ply\n")
+        f.write("format ascii 1.0\n")
+        f.write(f"element vertex {len(points)}\n")
+        f.write("property float x\n")
+        f.write("property float y\n")
+        f.write("property float z\n")
+        f.write("end_header\n")
+        
+        for p in points:
+            f.write(f"{p[0]} {p[1]} {p[2]}\n")
+            
+    print(f"Success! Saved to: {filename}")
+
+def control_height(command_client,height,robot_state_client):
+
+    #0.0 is neutral, 0.1 is high, -0.1 is low, height in meters
+    z_offset=height
+
+    #build the pose (position+rotation), w=1 is neutral quaternion
+    footprint_R_body=geometry_pb2.SE3Pose(
+        position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
+        rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
+    )
+
+    #create control parameters
+    body_control=spot_command_pb2.BodyControlParams(
+        base_offset_rt_footprint=footprint_R_body
+    )
+
+    #create mobility params and attach body control
+    mobility_params=spot_command_pb2.MobilityParams(body_control=body_control)
+
+    #build and send stand command  
+    stand_cmd=RobotCommandBuilder.synchro_stand_command(params=mobility_params)
+    command_client.robot_command(stand_cmd)
+
+    #wait for stabilization
+    time.sleep(2.0)

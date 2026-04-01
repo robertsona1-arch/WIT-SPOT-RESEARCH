@@ -69,7 +69,6 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
-
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
@@ -285,7 +284,6 @@ def convert_map_to_ply(map_dir, output_file):
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
         
-
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

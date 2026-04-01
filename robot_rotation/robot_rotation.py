@@ -206,8 +206,6 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
 
     time.sleep(duration+0.5)
 
-    
-
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

@@ -1,7 +1,8 @@
 """
 varying_ht_mp_fid.py
 
-python3 varying_ht_mp_fid.py <USERNAME> <PASSWORD> <DIRECTORY> <MASTER_MP_DIR> <DIST_IN_M>--end_n <END_N>
+python3 varying_ht_mp_fid.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N>
+use 3.5 for dist
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1.
 The robot will navigate to a fiducial before each recording, and the map will be saved in a separate folder for each N. The master map should be a recording of the robot standing still in front of the fiducial with 1 snapshot, and it will be used to find the fiducial and navigate to it for all subsequent recordings. The master map should be recorded with the robot at the same height as the first recording (N=1) for best results, but the script will attempt to find the fiducial even if there are height differences. 
@@ -17,7 +18,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 3/24/2026
-Last Updated: 3/24/2026
+Last Updated: 4/1/2026
 """
 
 from bosdyn.client.math_helpers import SE2Pose #new
@@ -83,12 +84,16 @@ def main(argv):
     parser=argparse.ArgumentParser()
 
     #positional args
-    parser.add_argument('username',help='Spot Username')
-    parser.add_argument('password',help='Spot Password')
-    parser.add_argument('map_dir',help='Directory to save maps to')
-    parser.add_argument('mast_dir',help='Directory of master map to find fiducial and navigate to')
-    parser.add_argument('dist',type=float,help='Distance in meters to stand from the fiducial')
-    parser.add_argument('--end_n',type=int,help='Number of final step amount to perform', default=10)
+    parser = argparse.ArgumentParser()
+    # Positional Arguments (Terminal order matters)
+    parser.add_argument('username', help='Spot Username')
+    parser.add_argument('password', help='Spot Password')
+    
+    # Optional/Named Arguments (Requires terminal flags)
+    parser.add_argument('--map_dir', help='Directory to save maps to', required=True)
+    parser.add_argument('--mast_dir', help='Directory where the map is stored on the robot', required=True)
+    parser.add_argument('--dist', type=float, help='Distance in meters', required=True)
+    parser.add_argument('--end_n',type=int,help='end n',required=False)
     
 
     options=parser.parse_args(argv)

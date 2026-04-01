@@ -12,7 +12,7 @@ import math
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
-import graph_nav_util
+#import graph_nav_util
 import bosdyn.client.channel 
 import bosdyn.client.util
 import bosdyn.client.graph_nav 

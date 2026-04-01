@@ -66,7 +66,6 @@ from bosdyn.client import math_helpers
 
 ROBOT_IP ="192.168.80.3"
 
-
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
@@ -202,7 +201,6 @@ def control_height(command_client,height,robot_state_client):
 
     #wait for stabilization
     time.sleep(2.0)
-
 
 if __name__ == "__main__":
     if not main(sys.argv[1:]):

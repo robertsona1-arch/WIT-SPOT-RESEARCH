@@ -171,8 +171,6 @@ def check_batt_perc(robot_state_client,limit=20.0):
         return False
     return True
 
-
-
 def convert_map_to_ply(map_dir, output_file):
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
