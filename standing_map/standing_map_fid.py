@@ -1,9 +1,7 @@
 """
 standing_map_fid.py
 
-python3 standing_map.py <USERNAME> <PASSWORD> <DIRECTORY> <MAST_DIR> <DIST_IN_M>
-
-Use distance=2.0
+python3 standing_map.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 The robot will navigate to the fiducial before starting recording. 
@@ -77,18 +75,23 @@ tag_id=1
 
 
 def main(argv):
-    #1. setup positional arguments
-    parser=argparse.ArgumentParser()
+    print("\n--- RAW ARGUMENT DIAGNOSTIC DUMP ---")
+    for i, arg in enumerate(argv):
+        print(f"Index {i}: {arg}")
+    print("------------------------------------\n")
 
-    #positional args
-    parser.add_argument('username',help='Spot Username')
-    parser.add_argument('password',help='Spot Password')
-    parser.add_argument('map_dir',help='Directory to save maps to')
-    parser.add_argument("mast_dir",help="Directory where the map is stored on the robot")
-    parser.add_argument("dist",type=float,help="Distance in meters to stay in front of the tag")
+    parser = argparse.ArgumentParser()
+    # Positional Arguments (Terminal order matters)
+    parser.add_argument('username', help='Spot Username')
+    parser.add_argument('password', help='Spot Password')
     
+    # Optional/Named Arguments (Requires terminal flags)
+    parser.add_argument('--map_dir', help='Directory to save maps to', required=True)
+    parser.add_argument('--mast_dir', help='Directory where the map is stored on the robot', required=True)
+    parser.add_argument('--dist', type=float, help='Distance in meters', required=True)
 
-    options=parser.parse_args(argv)
+    # Execute the parse
+    options = parser.parse_args(argv)
     
 
     #2. create sdk & authenticate
@@ -99,6 +102,7 @@ def main(argv):
     robot.authenticate(options.username,options.password)
 
     print("Authenticating...")
+
     robot.time_sync.wait_for_sync()
 
     #3. create clients
@@ -135,7 +139,7 @@ def main(argv):
         # Upload the map to the robot
         upload_map(graph_nav_client, options.map_dir)
         nav_to_fid(robot,tag_id, distance_meters=options.dist)
-        fine_align(robot, tag_id, dist=options.dist,iter=100)
+        fine_align(robot,tag_id, dist=options.dist,iter=100)
 
 
         for a in range(1, 11):
@@ -178,7 +182,6 @@ def main(argv):
             
     print("\nScript finished\n")
 
-#Functions
 def check_batt_perc(robot_state_client,limit=20.0):
     """
     Check battery percentage using protobuf path:
