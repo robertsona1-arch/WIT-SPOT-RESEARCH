@@ -153,6 +153,7 @@ def main(argv):
         print(f"\nNavigating to fiducial\n")
 
         for a in range(options.start_n, options.end_n+1):
+            start_time = time.time()
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
@@ -197,6 +198,9 @@ def main(argv):
                 ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
                 convert_map_to_ply(full_path,ply_name,a)
                 graph_nav_client.clear_graph()
+                end_time = time.time()
+                elapsed_time = end_time - start_time
+                print(f"\n[N={a}] Map with {a} rotations completed in {elapsed_time/60:.2f} minutes\n")
             else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue

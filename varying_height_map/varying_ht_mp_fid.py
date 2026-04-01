@@ -74,7 +74,6 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client import math_helpers
 from bosdyn.api import geometry_pb2, trajectory_pb2
 
-from standing_map.standing_map_fid import fine_align 
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
@@ -143,7 +142,7 @@ def main(argv):
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.mast_dir)
-        nav_to_fid(robot,tag_id, distance_meters=options.dist)
+        nav_to_fid(robot,tag_id, dist_m=options.dist)
         fine_align(robot, tag_id, options.dist, iter=100)
 
         for a in range(1, options.end_n + 1):
