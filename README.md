@@ -22,6 +22,7 @@ cd WIT-SPOT-RESEARCH
 We do not share virtual environments. You must create your own local "toolbox."
 
 **For Mac:**
+Must be in top level folder
 ```bash
 python3 -m venv spot-env
 ```
