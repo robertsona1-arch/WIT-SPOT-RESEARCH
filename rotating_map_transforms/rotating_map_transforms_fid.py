@@ -85,7 +85,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align
+from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics
 
 def main(argv):
     #1. setup positional arguments
@@ -154,17 +154,17 @@ def main(argv):
         upload_map(graph_nav_client, options.mast_dir)
         print(f"\nMaster map uploaded\n")
         nav_to_fid(robot,tag_id, dist_m=options.dist)
-        fine_align(robot,tag_id, options.dist, iter=100)
+        final_dist_error, final_yaw_error = fine_align(robot,tag_id, options.dist, iter=100)
         print(f"\nNavigating to fiducial\n")
 
         for a in range(options.start_n, options.end_n+1):
-            start_time = time.time()
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
             #fine_align(robot, tag_id, options.dist, iter=100)
             if 360 % a ==0:
+                start_time = time.time()
                 degPT=360.0/a
                 fold_name=f"test_n_{a:02d}"
                 full_path=os.path.join(options.map_dir,fold_name)
@@ -206,7 +206,13 @@ def main(argv):
                 graph_nav_client.clear_graph()
                 end_time = time.time()
                 elapsed_time = end_time - start_time
-                print(f"\n[N={a}] Map with {a} rotations completed in {elapsed_time/60:.2f} minutes\n")
+                log_test_metrics(
+                    map_directory=options.map_dir, 
+                    test_name=fold_name, 
+                    duration_secs=elapsed_time, 
+                    dist_error_m=final_dist_error, 
+                    yaw_error_deg=math.degrees(final_yaw_error)
+                )
             else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue

@@ -77,7 +77,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map
+from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map, log_test_metrics
 
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -140,10 +140,11 @@ def main(argv):
         # Upload the map to the robot
         upload_map(graph_nav_client, options.mast_dir)
         nav_to_fid(robot,tag_id, dist_m=options.dist)
-        fine_align(robot,tag_id, dist=options.dist,iter=100)
+        dist_error_m, final_yaw_error = fine_align(robot,tag_id, dist=options.dist,iter=100)
 
 
         for a in range(1, options.end_n+1):
+            start_time = time.time()
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=20.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
@@ -179,7 +180,10 @@ def main(argv):
             print(f"\n[N{a}]Converting to ply...\n")
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
             convert_map_to_ply(full_path,ply_name)
+            end_time = time.time()
+            duration_secs = end_time - start_time
             graph_nav_client.clear_graph()
+            log_test_metrics(map_dir=options.map_dir, test_name=fold_name, durations_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
             
     print("\nScript finished\n")
 

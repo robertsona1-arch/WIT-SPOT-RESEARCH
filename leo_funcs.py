@@ -385,7 +385,7 @@ def fine_align(robot, tag_id, dist,iter):
         a+=1
 
     print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
-    return True
+    return dist_error, yaw_error
 
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
@@ -456,3 +456,29 @@ def control_height(command_client,height,robot_state_client):
 
     #wait for stabilization
     time.sleep(2.0)
+
+def log_test_metrics(map_dir, test_name, duration_secs, dist_error_m, yaw_error_deg=None):
+    """
+    Appends execution time and final kinematic error to a continuous log file.
+    """
+    # 1. Ensure the target directory actually exists
+    os.makedirs(map_dir, exist_ok=True)
+    
+    # 2. Build the exact file path
+    log_filepath = os.path.join(map_dir, "alignment_metrics_log.txt")
+    
+    # 3. Generate a human-readable timestamp for the exact moment the test finished
+    timestamp = time.strftime("%Y-%m-%d %H:%M:%S")
+    
+    # 4. Format the data string
+    if yaw_error_deg is not None:
+        log_entry = f"[{timestamp}] Test: {test_name:<10} | Time: {duration_secs:>5.2f}s | Dist Error: {dist_error_m:>6.4f}m | Yaw Error: {yaw_error_deg:>5.2f} deg\n"
+    else:
+        log_entry = f"[{timestamp}] Test: {test_name:<10} | Time: {duration_secs:>5.2f}s | Dist Error: {dist_error_m:>6.4f}m\n"
+    
+    # 5. Write to the file
+    with open(log_filepath, "a") as file:
+        file.write(log_entry)
+        
+    print(f"Data successfully appended to {log_filepath}")
+
