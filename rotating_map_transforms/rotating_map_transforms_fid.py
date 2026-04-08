@@ -85,7 +85,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics
+from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics,ensure_recording_stopped
 
 def main(argv):
     #1. setup positional arguments
@@ -143,6 +143,8 @@ def main(argv):
         if not robot.is_powered_on():
             print("\nPowering on leo\n")
             robot.power_on(timeout_sec=20)
+
+        ensure_recording_stopped(robot)
 
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")

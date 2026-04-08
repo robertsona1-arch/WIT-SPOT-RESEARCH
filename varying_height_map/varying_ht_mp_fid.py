@@ -140,6 +140,7 @@ def main(argv):
             print("\nPowering on leo\n")
             robot.power_on(timeout_sec=20)
 
+        ensure_recording_stopped(robot)
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
