@@ -32,9 +32,7 @@ from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
-from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.client.map_processing import MapProcessingServiceClient
 from bosdyn.client import math_helpers
 from bosdyn.client.math_helpers import SE2Pose #new
 from bosdyn.client.world_object import WorldObjectClient

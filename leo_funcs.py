@@ -11,7 +11,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 4/1/2026
-Last Updated: 4/1/2026
+Last Updated: 4/8/2026
 """
 """
 # Dynamically point Python to the root repository folder
@@ -55,9 +55,7 @@ from bosdyn.client.lease import LeaseKeepAlive
 from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
 from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
-from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.client.map_processing import MapProcessingServiceClient
 from bosdyn.client import math_helpers
 from bosdyn.client.math_helpers import SE2Pose #new
 from bosdyn.client.world_object import WorldObjectClient
@@ -66,6 +64,7 @@ from bosdyn.client.world_object import WorldObjectClient
 import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
+
 
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -482,3 +481,28 @@ def log_test_metrics(map_dir, test_name, duration_secs, dist_error_m, yaw_error_
         
     print(f"Data successfully appended to {log_filepath}")
 
+def ensure_recording_stopped(robot):
+    """
+    Checks if the robot has an orphaned recording session running and forcefully kills it.
+    """
+    print("Checking Map Recording state...")
+    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
+    
+    try:
+        # Poll the physical robot for its current state
+        status = recording_client.get_record_status()
+        
+        if status.is_recording:
+            print("WARNING: Orphaned recording session detected on robot hardware.")
+            print("Forcefully stopping the previous session...")
+            recording_client.stop_recording()
+            print("Recording state cleared. Ready for new test.")
+        else:
+            print("Recording state clear. No active sessions.")
+            
+        return True
+        
+    except Exception as e:
+        print(f"CRITICAL: Failed to communicate with Map Recording Client: {e}")
+        return False
+    

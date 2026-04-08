@@ -17,7 +17,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 3/24/2026
-Last Updated: 4/1/2026
+Last Updated: 4/8/2026
 """
 
 import argparse
@@ -77,7 +77,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map, log_test_metrics
+from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map, log_test_metrics, ensure_recording_stopped
 
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -144,6 +144,7 @@ def main(argv):
 
 
         for a in range(1, options.end_n+1):
+            ensure_recording_stopped(robot)
             start_time = time.time()
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=5.0):

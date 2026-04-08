@@ -18,7 +18,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 3/24/2026
-Last Updated: 4/1/2026
+Last Updated: 4/8/2026
 """
 
 from bosdyn.client.math_helpers import SE2Pose #new
@@ -82,7 +82,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, convert_map_to_ply,control_height,nav_to_fid,fine_align,upload_map, log_test_metrics
+from leo_funcs import check_batt_perc, convert_map_to_ply,control_height,nav_to_fid,fine_align,upload_map, log_test_metrics, ensure_recording_stopped
 
 def main(argv):
     #1. setup positional arguments
@@ -152,6 +152,7 @@ def main(argv):
         dist_error_m, final_yaw_error = fine_align(robot, tag_id, options.dist, iter=100)
 
         for a in range(1, options.end_n + 1):
+            ensure_recording_stopped(robot)
             start_time = time.time()
             control_height(command_client,-0.1,robot_state_client)
             #battery check, won't run if less than 20%
@@ -201,8 +202,8 @@ def main(argv):
             print(f"\n[N{a}]Converting to ply...\n")
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
             convert_map_to_ply(full_path,ply_name,a)
-            graph_nav_client.clear_graph()
             end_time = time.time()
+            graph_nav_client.clear_graph()
             duration_secs = end_time - start_time
             if dist_error_m is None:
                 print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")

@@ -22,7 +22,7 @@ WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 3/24/2026
-Last Updated: 3/31/2026
+Last Updated: 4/8/2026
 """
 
 from bosdyn.client.math_helpers import SE2Pose #new
