@@ -148,6 +148,7 @@ def main(argv):
         print(f"\nMaster map uploaded\n")
         nav_to_fid(robot,tag_id, dist_m=options.dist)
         dist_error_m, final_yaw_error = fine_align(robot, tag_id, options.dist, iter=100)
+        graph_nav_client.clear_graph() # clear unused graph data before starting mapping sequence
         print(f"\nNavigating to fiducial\n")
 
         for a in range(options.start_n, options.end_n+1):
