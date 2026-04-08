@@ -144,12 +144,11 @@ def main(argv):
         upload_map(graph_nav_client, options.mast_dir)
         nav_to_fid(robot,tag_id, dist_m=options.dist)
         dist_error_m, final_yaw_error = fine_align(robot, tag_id, options.dist, iter=100)
-        dist_error_m=None
-        final_yaw_error=None
 
         degPT=options.or_deg
         turn_relative(command_client,robot_state_client,degPT)
         for a in range(1, options.end_n + 1):
+            graph_nav_client.clear_graph()
             start_state=state_client.get_robot_state()
             st_batt_perc=start_state.battery_states[0].charge_percentage.value
             start_time = time.time()
@@ -195,7 +194,14 @@ def main(argv):
             time.sleep(0.5)
                 
             # Use the module-level helper, passing the directory and the client
-            graph_nav_client.write_graph_and_snapshots(full_path)
+            try:
+                graph_nav_client.write_graph_and_snapshots(full_path)
+                print("Map successfully downloaded and saved.")
+            except Exception as e:
+                print(f"\nCRITICAL: Robot failed to transmit the map.")
+                print(f"Error Details: {e}")
+                print("ACTION: Map data is incomplete. You must delete the folder and retry the test.")
+                return False
 
             #convert
             print(f"\n[N{a}]Converting to ply...\n")

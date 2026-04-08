@@ -1,7 +1,7 @@
 """
 standing_map_fid.py
 
-python3 standing_map_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20
+python3 standing_map_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 The robot will navigate to the fiducial before starting recording. 
@@ -71,7 +71,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map, log_test_metrics, ensure_recording_stopped
+from leo_funcs import check_batt_perc, convert_map_to_ply, nav_to_fid, fine_align, upload_map, log_test_metrics, ensure_recording_stopped, turn_relative
 
 def main(argv):
     parser = argparse.ArgumentParser()
@@ -84,6 +84,7 @@ def main(argv):
     parser.add_argument('--mast_dir', help='Directory where the map is stored on the robot', required=True)
     parser.add_argument('--dist', type=float, help='Distance in meters', required=True)
     parser.add_argument('--end_n',type=int,help='end n',required=False)
+    parser.add_argument('--or_deg',type=float,help='or_deg',required=False, default=0)
 
     # Execute the parse
     options = parser.parse_args(argv)
@@ -138,8 +139,10 @@ def main(argv):
         nav_to_fid(robot,tag_id, dist_m=options.dist)
         dist_error_m, final_yaw_error = fine_align(robot,tag_id, dist=options.dist,iter=100)
 
-
+        degPT=options.or_deg
+        turn_relative(command_client,robot_state_client,degPT)
         for a in range(1, options.end_n+1):
+            graph_nav_client.clear_graph()
             start_state=state_client.get_robot_state()
             st_batt_perc=start_state.battery_states[0].charge_percentage.value
             start_time = time.time()

@@ -156,6 +156,7 @@ def main(argv):
                 break
             #fine_align(robot, tag_id, options.dist, iter=100)
             if 360 % a ==0:
+                graph_nav_client.clear_graph()
                 start_state=state_client.get_robot_state()
                 st_batt_perc=start_state.battery_states[0].charge_percentage.value
                 start_time = time.time()
@@ -185,6 +186,7 @@ def main(argv):
                     time.sleep(3)
                 if a==options.end_n:
                     turn_relative(command_client,robot_state_client,degPT)
+                    print("\nTurning so its at the start")
 
                 #stop and download
                 recording_client.stop_recording()
@@ -207,6 +209,7 @@ def main(argv):
                     print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
                 else:
                     log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error),batt_used_p=batt_used_p)
+            else:
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue
 
