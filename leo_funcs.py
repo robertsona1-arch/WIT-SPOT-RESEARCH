@@ -437,14 +437,14 @@ def control_height(command_client,height,robot_state_client):
     z_offset=height
 
     #build the pose (position+rotation), w=1 is neutral quaternion
-    pose=geometry_pb2.SE3Pose(
+    footprint_R_body=geometry_pb2.SE3Pose(
         position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
         rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
     )
 
     #wrap pose in trajectory point
     point=trajectory_pb2.SE3TrajectoryPoint(
-        pose=pose,
+        pose=footprint_R_body,
         time_since_reference=google.protobuf.duration_pb2.Duration(seconds=0) #0 second to reach the target height immediately
     )
 
@@ -455,6 +455,11 @@ def control_height(command_client,height,robot_state_client):
     body_control=spot_command_pb2.BodyControlParams(
         base_offset_rt_footprint=traj
     )
+
+    # #create control parameters
+    # body_control=spot_command_pb2.BodyControlParams(
+    #     base_offset_rt_footprint=footprint_R_body
+    # )
 
     #create mobility params and attach body control
     mobility_params=spot_command_pb2.MobilityParams(body_control=body_control)
