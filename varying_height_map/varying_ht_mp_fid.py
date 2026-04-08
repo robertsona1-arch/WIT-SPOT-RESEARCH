@@ -1,7 +1,10 @@
 """
 varying_ht_mp_fid.py
 
-python3 varying_ht_mp_fid.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N> --or_deg <0 or 180>
+mac - python3 varying_ht_mp_fid.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N> --or_deg <0 or 180>
+windows - python varying_ht_mp_fid.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N> --or_deg <0 or 180>
+
+
 use 3.5 for dist
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1.

@@ -1,7 +1,8 @@
 """
 standing_map_fid.py
 
-python3 standing_map_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
+mac - python3 standing_map_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
+windows - python standing_map_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 The robot will navigate to the fiducial before starting recording. 

@@ -1,7 +1,8 @@
 """
 rotating_map_transforms_fid.py
 
-python3 rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
+mac - python3 rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
+windows - python rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
 use dist=3.5
 
 Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
