@@ -359,6 +359,18 @@ def fine_align(robot, tag_id, dist,iter):
         
         print(f"Current Error -> Distance: {dist_error:.4f}m | Heading: {math.degrees(yaw_error):.2f} deg")
         
+        #manual check
+        while True:
+            user_input=input("\nIs this starting spot accetable?\ny or n\n").strip().lower()
+            if user_input in ['y','yes']:
+                print("\nManually set to go, beginning\n")
+                return dist_error, yaw_error
+            elif user_input in ['n','no']:
+                print("\nRetrying\n")
+                break
+            else:
+                print("\nInvalid input, please type y or n then press enter\n")
+                break
         # 5. The Threshold Check (e.g., within 1.5cm and 1.5 degrees)
         if dist_error < dist_thrsh and math.degrees(yaw_error) < deg_thrsh:
             print("SUCCESS: Experimental alignment tolerances achieved.")

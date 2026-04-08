@@ -20,6 +20,7 @@ Date Created: 3/24/2026
 Last Updated: 4/8/2026
 """
 
+#general stuff
 import argparse
 import logging
 import os
@@ -29,46 +30,39 @@ import struct #added for ply conversion
 import traceback
 import math
 
+#bd specific imports
 import google.protobuf.timestamp_pb2
 #import graph_nav_util
-import grpc
-from google.protobuf import wrappers_pb2 as wrappers
-
 import bosdyn.client.channel 
 import bosdyn.client.util
-from bosdyn.api.graph_nav import map_pb2, map_processing_pb2, recording_pb2
 import bosdyn.client.graph_nav 
+import bosdyn.client
+
+from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2, robot_command_pb2 as generic_robot_command_pb2, trajectory_pb2, world_object_pb2, basic_command_pb2
+from bosdyn.api.gps import gps_pb2
+from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2, map_processing_pb2, recording_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client.graph_nav import GraphNavClient
 from bosdyn.client.map_processing import MapProcessingServiceClient #check this
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.recording import GraphNavRecordingServiceClient
-from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2
-from bosdyn.api.gps import gps_pb2
-from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
-
-#following not in sdk examples
-import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
-
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
-# 1. CLIENTS (The "Doing" part)
-
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
+from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
-from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2
-from bosdyn.client.map_processing import MapProcessingServiceClient
-
-# 2. APIS/PROTOS (The "Data" part)
-from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-
+from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import math_helpers
-from bosdyn.client.math_helpers import SE3Pose,SE2Pose #new
-from bosdyn.api import world_object_pb2, basic_command_pb2#new
+from bosdyn.client.math_helpers import SE2Pose #new
 from bosdyn.client.world_object import WorldObjectClient
+
+#google imports
+import grpc
+
+from google.protobuf import wrappers_pb2 as wrappers
+
 
 ROBOT_IP ="192.168.80.3"
 tag_id=1
@@ -114,6 +108,7 @@ def main(argv):
     robot_state_client=robot.ensure_client('robot-state')
     map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
     world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
+    state_client=robot.ensure_client(RobotStateClient.default_service_name)
 
     #create directory
     if not os.path.exists(options.map_dir):
@@ -132,6 +127,7 @@ def main(argv):
             robot.power_on(timeout_sec=20)
 
         #Command the robot to stand
+        ensure_recording_stopped(robot)
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
@@ -144,7 +140,8 @@ def main(argv):
 
 
         for a in range(1, options.end_n+1):
-            ensure_recording_stopped(robot)
+            start_state=state_client.get_robot_state()
+            st_batt_perc=start_state.battery_states[0].charge_percentage.value
             start_time = time.time()
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=5.0):
@@ -182,12 +179,15 @@ def main(argv):
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
             convert_map_to_ply(full_path,ply_name,n=a)
             end_time = time.time()
+            end_state=state_client.get_robot_state()
+            end_batt_per=end_state.battery_states[0].charge_percentage.value
             duration_secs = end_time - start_time
+            batt_used_p=st_batt_perc-end_batt_per
             graph_nav_client.clear_graph()
             if dist_error_m is None:
                 print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
             else:
-                log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
+                log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error),batt_used_p=batt_used_p)
             
     print("\nScript finished\n")
 
