@@ -56,6 +56,7 @@ from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME
 from bosdyn.client.frame_helpers import BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
+from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import math_helpers
 from bosdyn.client.math_helpers import SE2Pose #new
 from bosdyn.client.world_object import WorldObjectClient
@@ -436,14 +437,23 @@ def control_height(command_client,height,robot_state_client):
     z_offset=height
 
     #build the pose (position+rotation), w=1 is neutral quaternion
-    footprint_R_body=geometry_pb2.SE3Pose(
+    pose=geometry_pb2.SE3Pose(
         position=geometry_pb2.Vec3(x=0.0,y=0.0,z=z_offset),
         rotation=geometry_pb2.Quaternion(w=1.0,x=0.0,y=0.0,z=0.0)
     )
 
+    #wrap pose in trajectory point
+    point=trajectory_pb2.SE3TrajectoryPoint(
+        pose=pose,
+        time_since_reference=google.protobuf.duration_pb2.Duration(seconds=0) #0 second to reach the target height immediately
+    )
+
+    #create trajectory w/single point
+    traj=trajectory_pb2.SE3Trajectory(points=[point])
+
     #create control parameters
     body_control=spot_command_pb2.BodyControlParams(
-        base_offset_rt_footprint=footprint_R_body
+        base_offset_rt_footprint=traj
     )
 
     #create mobility params and attach body control
@@ -456,7 +466,7 @@ def control_height(command_client,height,robot_state_client):
     #wait for stabilization
     time.sleep(2.0)
 
-def log_test_metrics(map_dir, test_name, duration_secs, dist_error_m, yaw_error_deg=None):
+def log_test_metrics(map_dir, test_name, duration_secs, dist_error_m, yaw_error_deg=None, batt_used_p=None):
     """
     Appends execution time and final kinematic error to a continuous log file.
     """
@@ -475,6 +485,11 @@ def log_test_metrics(map_dir, test_name, duration_secs, dist_error_m, yaw_error_
     else:
         log_entry = f"[{timestamp}] Test: {test_name:<10} | Time: {duration_secs:>5.2f}s | Dist Error: {dist_error_m:>6.4f}m\n"
     
+    if batt_used_p is not None:
+        log_entry += f" | Battery Used: {batt_used_p:>5.2f}%\n"
+    else:
+        log_entry += "\n"
+
     # 5. Write to the file
     with open(log_filepath, "a") as file:
         file.write(log_entry)
