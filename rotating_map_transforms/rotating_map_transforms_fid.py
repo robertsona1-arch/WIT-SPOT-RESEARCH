@@ -154,7 +154,7 @@ def main(argv):
         upload_map(graph_nav_client, options.mast_dir)
         print(f"\nMaster map uploaded\n")
         nav_to_fid(robot,tag_id, dist_m=options.dist)
-        final_dist_error, final_yaw_error = fine_align(robot,tag_id, options.dist, iter=100)
+        dist_error_m, final_yaw_error = fine_align(robot, tag_id, options.dist, iter=100)
         print(f"\nNavigating to fiducial\n")
 
         for a in range(options.start_n, options.end_n+1):
@@ -205,15 +205,11 @@ def main(argv):
                 convert_map_to_ply(full_path,ply_name,a)
                 graph_nav_client.clear_graph()
                 end_time = time.time()
-                elapsed_time = end_time - start_time
-                log_test_metrics(
-                    map_directory=options.map_dir, 
-                    test_name=fold_name, 
-                    duration_secs=elapsed_time, 
-                    dist_error_m=final_dist_error, 
-                    yaw_error_deg=math.degrees(final_yaw_error)
-                )
-            else:
+                duration_secs = end_time - start_time
+                if dist_error_m is None:
+                    print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
+                else:
+                    log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
                 print(f"\nN={a} is not a factor of 360, skipping to next N\n")
                 continue
 

@@ -204,7 +204,10 @@ def main(argv):
             graph_nav_client.clear_graph()
             end_time = time.time()
             duration_secs = end_time - start_time
-            log_test_metrics(map_dir=options.map_dir, test_name=fold_name, durations_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
+            if dist_error_m is None:
+                print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
+            else:
+                log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
             
     print("\nScript finished\n")
 

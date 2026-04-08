@@ -1,7 +1,7 @@
 """
 standing_map_fid.py
 
-python3 standing_map.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5
+python3 standing_map.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 The robot will navigate to the fiducial before starting recording. 
@@ -146,7 +146,7 @@ def main(argv):
         for a in range(1, options.end_n+1):
             start_time = time.time()
             #battery check, won't run if less than 20%
-            if not check_batt_perc(robot_state_client,limit=20.0):
+            if not check_batt_perc(robot_state_client,limit=5.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
                 
@@ -179,11 +179,14 @@ def main(argv):
             #convert
             print(f"\n[N{a}]Converting to ply...\n")
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-            convert_map_to_ply(full_path,ply_name)
+            convert_map_to_ply(full_path,ply_name,n=a)
             end_time = time.time()
             duration_secs = end_time - start_time
             graph_nav_client.clear_graph()
-            log_test_metrics(map_dir=options.map_dir, test_name=fold_name, durations_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
+            if dist_error_m is None:
+                print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
+            else:
+                log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error))
             
     print("\nScript finished\n")
 

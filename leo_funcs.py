@@ -249,7 +249,7 @@ def nav_to_fid(robot, tag_id, dist_m):
     #project tag into global map frame
     seed_tform_fiducial = seed_tform_body * body_tform_fiducial
 
-    # 4. Push 1.5m straight out from the tag (No rotation yet)
+    # 4. Push dist_m straight out from the tag (No rotation yet)
     tag_z_out = SE3Pose(x=0.0, y=0.0, z=dist_m, rot=Quat())
     raw_seed_goal = seed_tform_fiducial * tag_z_out
 
@@ -337,7 +337,7 @@ def fine_align(robot, tag_id, dist,iter):
         fiducial_obj = next((obj for obj in world_objects if obj.apriltag_properties.tag_id == int(tag_id)), None)
         if not fiducial_obj:
             print("Error: Lost sight of tag during visual servoing.")
-            return False
+            return None,None
 
         # 2. Extract Transform to ODOM
         tag_frame_name = fiducial_obj.apriltag_properties.frame_name_fiducial
@@ -362,7 +362,7 @@ def fine_align(robot, tag_id, dist,iter):
         # 5. The Threshold Check (e.g., within 1.5cm and 1.5 degrees)
         if dist_error < dist_thrsh and math.degrees(yaw_error) < deg_thrsh:
             print("SUCCESS: Experimental alignment tolerances achieved.")
-            return True
+            return dist_error, yaw_error
 
         # 6. Execute Correction Command
         goal_se2 = SE2Pose(raw_goal_odom.x, raw_goal_odom.y, heading_rads)
@@ -385,7 +385,7 @@ def fine_align(robot, tag_id, dist,iter):
         a+=1
 
     print("WARNING: Max iterations reached without hitting strict tolerances. Proceeding with best effort.")
-    return dist_error, yaw_error
+    return None,None
 
 def upload_map(graph_nav_client, map_dir):
     # 1. Load and Upload the Graph (The Skeleton)
