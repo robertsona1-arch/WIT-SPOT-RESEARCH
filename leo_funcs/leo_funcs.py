@@ -538,3 +538,4 @@ def ensure_recording_stopped(robot):
         print(f"CRITICAL: Failed to communicate with Map Recording Client: {e}")
         return False
     
+    

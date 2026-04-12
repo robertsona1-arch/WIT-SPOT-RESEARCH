@@ -150,6 +150,8 @@ def main(argv):
 
         degPT=options.or_deg
         turn_relative(command_client,robot_state_client,degPT)
+        low=-0.1
+        high=0.1
         for a in range(1, options.end_n + 1):
             graph_nav_client.clear_graph()
             start_state=state_client.get_robot_state()
@@ -172,8 +174,7 @@ def main(argv):
             recording_client.start_recording()
             print("\nStarting Recording\n")
             time.sleep(0.1)
-            low=-0.1
-            high=0.1
+            
             step=(high-low)/a
             cur_h=low
             for b in range(a):
