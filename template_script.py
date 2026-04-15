@@ -61,8 +61,34 @@ def main (argv):
 
     #each client service will have its own lease client
     lease_client=leo.ensure_client('lease')
-    recording_client = robot.ensure_client(GraphNavRecordingServiceClient.default_service_name)
-    robot_state_client=robot.ensure_client('robot-state')
+    recording_client = leo.ensure_client(GraphNavRecordingServiceClient.default_service_name)
+    leo_state_client=leo.ensure_client('robot-state')
     
     print("\nAuthentication complete\n")
+
+    if not leo.is_powered_on():
+        print("\nLeo is powered off, please turn him onexiting...\n")
+        sys.exit(1)
     
+
+    #forcefully take the lease:
+    lease_client.take()
+    with LeaseKeepAlive(lease_client,must_acquire=False, return_at_exit=True):
+        #main body of code goes here, the lease will automatically be released when the block is exited, even if an error occurs
+        print("\nLease acquired, executing main body of code...\n")
+
+        #example function call from leo_funcs, replace with your own function calls
+        check_batt_perc(leo_state_client)
+        time.sleep(2)
+
+        #Command the robot to stand
+        print("\nCommanding robot to stand...\n")
+        stand=RobotCommandBuilder.synchro_stand_command()
+        command_client.robot_command(stand)
+        time.sleep(3)
+
+        #rest of code goes here
+
+if __name__ == "__main__":
+    if not main(sys.argv[1:]):
+        sys.exit(1)
