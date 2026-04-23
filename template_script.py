@@ -89,6 +89,18 @@ def main (argv):
 
         #rest of code goes here
 
+        #logging example,
+        log_dir=options.dir
+        log_filename=os.path.join(log_dir, f"log_{datetime.now().strftime('%Y%m%d_%H%M%S')}.txt")
+        logging.basicConfig(
+            level=logging.INFO,
+            format='%(asctime)s - %(levelname)s - %(message)s',
+            handlers=[
+                logging.FileHandler(log_filename),
+                logging.StreamHandler()
+            ]
+        )
+
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)
