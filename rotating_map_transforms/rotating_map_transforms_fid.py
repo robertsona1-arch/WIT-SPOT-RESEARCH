@@ -2,6 +2,7 @@
 rotating_map_transforms_fid.py
 
 mac - python3 rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
+
 windows - python rotating_map_transforms_fid.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
 use dist=3.5
 
@@ -171,7 +172,6 @@ def main(argv):
                 if not os.path.exists(full_path):
                     os.makedirs(full_path)
                 
-                #graph_nav_client.clear_graph() got error saying call stop recording first
                 recording_client.start_recording()
                 print("\nStarting Recording\n")
                 time.sleep(0.1)

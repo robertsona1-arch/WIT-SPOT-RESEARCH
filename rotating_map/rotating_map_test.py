@@ -1,7 +1,9 @@
 """
 rotating_map_test.py
 
-python3 rotating_map_test.py <USERNAME> <PASSWORD> <DIRECTORY> <START_N> <OPTION_END_N>
+mac: python3 rotating_map_test.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --start_n <START_N> --end_n <END_N>
+
+windows: python rotating_map_test.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --start_n <START_N> --end_n <END_N>
 
 This is a test script for the rotating_map.py script, designed to validate the map recording and conversion process without requiring actual robot hardware. It uses MagicMock to simulate the robot's clients and responses, allowing us to test the logic of our mapping and conversion functions in isolation.
 This script records a map with the robot making N turns
@@ -11,62 +13,58 @@ This script pulls significant portions of code from the Boston Dynamics recordin
 Minimal AI was used to aid in syntax and structure
 """
 
-
 """
 Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
 WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 2/28/2026
-Last Updated: 2/28/2026
+Last Updated: 4/23/2026
 """
 
+#general stuff
 import argparse
 import logging
 import os
+import struct #ply conversion
 import sys
 import time
-import struct #added for ply conversion
 import traceback
 import math
+from datetime import datetime
+from unittest.mock import MagicMock
 
+#bd specific imports
 import google.protobuf.timestamp_pb2
 #import graph_nav_util
-import grpc
-from google.protobuf import wrappers_pb2 as wrappers
-
 import bosdyn.client.channel 
 import bosdyn.client.util
-from bosdyn.api.graph_nav import map_pb2, map_processing_pb2, recording_pb2
 import bosdyn.client.graph_nav 
+import bosdyn.client
+
+from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2, robot_command_pb2 as generic_robot_command_pb2, trajectory_pb2, world_object_pb2, basic_command_pb2
+from bosdyn.api.gps import gps_pb2
+from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2, map_processing_pb2, recording_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client.graph_nav import GraphNavClient
-from bosdyn.client.map_processing import MapProcessingServiceClient #check this
+from bosdyn.client.map_processing import MapProcessingServiceClient
 from bosdyn.client.math_helpers import Quat, SE3Pose
 from bosdyn.client.recording import GraphNavRecordingServiceClient
-from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2
-from bosdyn.api.gps import gps_pb2
-from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2
-
-#following not in sdk examples
-import bosdyn.client
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b
-# 1. CLIENTS (The "Doing" part)
-
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
-from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
-from bosdyn.api import geometry_pb2
-from bosdyn.client.map_processing import MapProcessingServiceClient
-
-# 2. APIS/PROTOS (The "Data" part)
-from bosdyn.api import robot_command_pb2 as generic_robot_command_pb2
-from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
-
-from unittest.mock import MagicMock
+from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import math_helpers
+from bosdyn.client.math_helpers import SE2Pose
+from bosdyn.client.world_object import WorldObjectClient
+
+#google imports
+import grpc
+
+from google.protobuf import wrappers_pb2 as wrappers
 
 ROBOT_IP ="192.168.80.3"
 
@@ -84,11 +82,11 @@ def main(argv):
     #positional args
     parser.add_argument('username',help='Spot Username')
     parser.add_argument('password',help='Spot Password')
-    parser.add_argument('map_dir',help='Directory to save maps to')
-    parser.add_argument('start_n',type=int,help='Number of initial rotations to perform')
+    parser.add_argument('--map_dir',help='Directory to save maps to')
+    parser.add_argument('--start_n',type=int,help='Number of initial rotations to perform',default=1)
 
     #optional end N
-    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=4)
+    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=8)
 
     options=parser.parse_args(argv)
     if options.start_n<1:

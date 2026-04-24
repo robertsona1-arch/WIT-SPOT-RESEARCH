@@ -10,6 +10,7 @@ import time
 import traceback
 import math
 from datetime import datetime
+from unittest.mock import MagicMock
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
