@@ -25,8 +25,8 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-# Now you can import your custom functions cleanly
-from leo_funcs import calculate_offset, fine_align
+# Now you can import the functions cleanly
+from leo_funcs import fine_align
 
 """
 #general stuff
