@@ -1,10 +1,15 @@
 """
 leo_funcs.py
 
+mac: python3 name_of_script.py <user> <password>
+
+windows: python name_of_script.py <user> <password>
+
 This file contains all the functions used in any script. 
 At the top are all the imports 
 Below this is how to use 
 """
+
 """
 Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
 WIT SPOT Research Group
@@ -13,6 +18,7 @@ Contributors: Patrick Woolf, Geoffery Siebert
 Date Created: 4/1/2026
 Last Updated: 4/8/2026
 """
+
 """
 # Dynamically point Python to the root repository folder
 current_dir = os.path.dirname(os.path.abspath(__file__))
