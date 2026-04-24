@@ -1,10 +1,5 @@
 """
 leo_funcs.py
-
-mac: python3 name_of_script.py <user> <password>
-
-windows: python name_of_script.py <user> <password>
-
 This file contains all the functions used in any script. 
 At the top are all the imports 
 Below this is how to use 
