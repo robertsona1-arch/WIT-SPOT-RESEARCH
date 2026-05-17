@@ -17,9 +17,9 @@ Minimal AI was used to aid in syntax and structure
 Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
 WIT SPOT Research Group
 Prof. Latif 
-Contributors: Patrick Woolf, Geoffery Siebert
+Contributors: Patrick Woolf, Geoffery Siebert, Ryan Staley
 Date Created: 2/28/2026
-Last Updated: 4/23/2026
+Last Updated: 5/17/2026
 """
 
 #general stuff
