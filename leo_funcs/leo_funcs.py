@@ -1,26 +1,27 @@
 """
 leo_funcs.py
-
 This file contains all the functions used in any script. 
 At the top are all the imports 
 Below this is how to use 
 """
+
 """
 Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
 WIT SPOT Research Group
 Prof. Latif 
-Contributors: Patrick Woolf, Geoffery Siebert
+Contributors: Patrick Woolf, Geoffery Siebert, Ryan Staley
 Date Created: 4/1/2026
-Last Updated: 4/8/2026
+Last Updated: 5/17/2026
 """
+
 """
 # Dynamically point Python to the root repository folder
 current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-# Now you can import your custom functions cleanly
-from leo_funcs import calculate_offset, fine_align
+# Now you can import the functions cleanly
+from leo_funcs import fine_align
 
 """
 #general stuff

@@ -17,9 +17,9 @@ Minimal AI was used to aid in syntax and structure
 Written by Adam Robertson, Wentworth Institute of Technology, School of Engineering
 WIT SPOT Research Group
 Prof. Latif 
-Contributors: Patrick Woolf, Geoffery Siebert
+Contributors: Patrick Woolf, Geoffery Siebert, Ryan Staley
 Date Created: 2/28/2026
-Last Updated: 4/23/2026
+Last Updated: 5/17/2026
 """
 
 #general stuff
@@ -182,17 +182,6 @@ def main(argv):
                 #stop and download
                 recording_client.stop_recording()
                 time.sleep(0.5)
-                
-                
-                # Use the module-level helper, passing the directory and the client
-                #this one didn't work, said "AttributeError: module 'bosdyn.client.map_processing' has no attribute 'write_graph_and_snapshots'"
-                """map_processing.write_graph_and_snapshots(#this one gave error
-                    full_path, 
-                    graph_nav_client, 
-                    map_name="map_at_turn_" + str(a)
-                )"""
-                # Use the module-level helper, passing the directory and the client
-                #bosdyn.client.graph_nav.write_graph_and_snapshots(options.map_dir, graph_nav_client)
 
                 
                 #convert

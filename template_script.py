@@ -2,6 +2,7 @@
 name_temp.py
 
 mac - python3 name_temp.y <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
+
 windows - python name_temp.y <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
 
 DESC...
