@@ -6,6 +6,7 @@ __pycache__/
 spot-env/
 venv/
 env/
+spot-sdk/
 
 # --- 3. Editor Settings ---
 .vscode/

@@ -88,7 +88,7 @@ def main(argv):
     #optional end N
     parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=8)
 
-    options=parser.parse_args(argv)
+    options=parser.parse_args(sys.argv[1:])
     if options.start_n<1:
         options.start_n=1
 
