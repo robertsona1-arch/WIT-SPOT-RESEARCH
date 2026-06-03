@@ -22,7 +22,6 @@ Date Created: 2/28/2026
 Last Updated: 5/17/2026
 """
 
-#general stuff
 import argparse
 import logging
 import os
@@ -33,6 +32,12 @@ import traceback
 import math
 from datetime import datetime
 from unittest.mock import MagicMock
+import numpy as np
+import open3d as o3d
+import csv
+import json
+import glob
+import pandas  
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -65,6 +70,7 @@ from bosdyn.client.world_object import WorldObjectClient
 import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
+
 
 ROBOT_IP ="192.168.80.3"
 

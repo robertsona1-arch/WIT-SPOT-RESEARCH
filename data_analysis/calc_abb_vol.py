@@ -88,26 +88,38 @@ def main():
     options = parser.parse_args()
 
     # 1. AUTOMATION STEP: Dynamically discover the JSON configuration file in the target folder
-    json_files = glob.glob(os.path.join(options.folder, "*.json"))
+    json_file_n = os.path.join(options.folder, "area_bounds_n.json")
+    json_file_1 = os.path.join(options.folder, "area_bounds_1.json")
     
-    if not json_files:
+    if not os.path.exists(json_file_n):
+        print(f"Error: No JSON configuration file found inside: {options.folder}")
+        print("Please ensure your area configuration file is placed directly in that folder.")
+        return
+    if not os.path.exists(json_file_1):
         print(f"Error: No JSON configuration file found inside: {options.folder}")
         print("Please ensure your area configuration file is placed directly in that folder.")
         return
         
-    config_path = json_files[0]
-    print(f"Loaded configuration file: {config_path}")
+    config_path_n = json_file_n
+    config_path_1 = json_file_1
+
+    print(f"\nLoaded configuration file: {config_path_n}\n")
+    print(f"\nLoaded configuration file: {config_path_1}\n")
 
     # Load Area Configurations
-    with open(config_path, 'r') as f:
-        config_data = json.load(f)
-    areas = config_data.get("areas", {})
+    with open(config_path_1, 'r') as f:
+        config_data_1 = json.load(f)
+    areas_1 = config_data_1.get("areas", {})
+
+    with open(config_path_n, 'r') as f:
+        config_data_n = json.load(f)
+    areas_n = config_data_n.get("areas", {})
 
     results_data = []
 
     # Loop through subfolders test_n_01 to test_n_20
-    for i in range(1, 21):
-        subfolder_name = f"test_n_{i:02d}"
+    for a in range(1, 21):
+        subfolder_name = f"test_n_{a:02d}"
         subfolder_path = os.path.join(options.folder, subfolder_name)
 
         if not os.path.exists(subfolder_path):
@@ -128,6 +140,10 @@ def main():
         points = np.asarray(pcd.points)
 
         # Analyze the areas defined in the discovered JSON
+        if a == 1:
+            areas = areas_1
+        else:
+            areas = areas_n
         for area_name, bounds in areas.items():
             x_range = bounds["x_range"]
             y_range = bounds["y_range"]
@@ -135,7 +151,7 @@ def main():
             volume, point_count = calculate_aabb_volume(points, x_range, y_range)
             
             results_data.append({
-                'Test_Run': i,
+                'Test_Run': a,
                 'Area_Name': area_name,
                 'Point_Count': point_count,
                 'Volume_m3': round(volume, 6)

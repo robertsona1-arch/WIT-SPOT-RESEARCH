@@ -24,7 +24,6 @@ sys.path.append(parent_dir)
 from leo_funcs import fine_align
 
 """
-#general stuff
 import argparse
 import logging
 import os
@@ -39,6 +38,8 @@ import numpy as np
 import open3d as o3d
 import csv
 import json
+import glob
+import pandas  
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
