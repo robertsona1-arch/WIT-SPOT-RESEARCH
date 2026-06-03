@@ -1,17 +1,14 @@
 """
-rotating_map_transforms_fid_lock.py
+varying_ht_mp_lock.py
 
-mac - python3 rotating_map_transforms_fid_lock.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
+mac - python3 varying_ht_mp_lock.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N> --or_deg <0 or 180>
+windows - python varying_ht_mp_lock.py <USERNAME> <PASSWORD> --map_dir <DIRECTORY> --mast_dir <MASTER_MP_DIR> --dist <DIST_IN_M> --end_n <END_N> --or_deg <0 or 180>
 
-windows - python rotating_map_transforms_fid_lock.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MASTER_MAP_DIR" --dist <DISTANCE_IN_METERS> --start_n <START_N> --end_n <END_N>
-use dist=3.5
 
-Use ctrl+c to stop the script at any time, the robot will stop and sit safely, and any completed maps will be saved
+use 3.5 for dist
 
-This script records a map with the robot making N turns
-It will begin with <START_N> turns, then increments by factors of 360 until it reaches the battery check
-After each set of rotations is complete, the robot will find the fiducial again, creating a reference point
-This script is an updated version of rotating_map that will track the rotation of the snapshots and use the transformation matrix
+This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1.
+The robot will navigate to a fiducial before each recording, and the map will be saved in a separate folder for each N. The master map should be a recording of the robot standing still in front of the fiducial with 1 snapshot, and it will be used to find the fiducial and navigate to it for all subsequent recordings. The master map should be recorded with the robot at the same height as the first recording (N=1) for best results, but the script will attempt to find the fiducial even if there are height differences. 
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
 This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
 Minimal AI was used to aid in syntax and structure
@@ -64,7 +61,7 @@ from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b, VISION_FRAME_NAME
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, get_a_tform_b, VISION_FRAME_NAME
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
 from bosdyn.client.robot_state import RobotStateClient
@@ -84,29 +81,27 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics,ensure_recording_stopped, convert_map_to_ply_2
+from leo_funcs import check_batt_perc, convert_map_to_ply_2,control_height,nav_to_fid,fine_align,upload_map, log_test_metrics, ensure_recording_stopped,turn_relative
 
 def main(argv):
     #1. setup positional arguments
     parser=argparse.ArgumentParser()
 
     #positional args
-    parser.add_argument('username',help='Spot Username')
-    parser.add_argument('password',help='Spot Password')
-    parser.add_argument('--map_dir',help='Directory to save maps to')
-    parser.add_argument('--mast_dir',help='Master Map Directory')
-    parser.add_argument('--dist',type=float,help='distance in meters to fiducial')
-    parser.add_argument('--start_n',type=int,help='Number of initial rotations to perform',default=1)
-
-    #optional end N
-    parser.add_argument('--end_n',type=int,help='Number of maximum rotations to perform',default=8)
+    parser = argparse.ArgumentParser()
+    # Positional Arguments (Terminal order matters)
+    parser.add_argument('username', help='Spot Username')
+    parser.add_argument('password', help='Spot Password')
+    
+    # Optional/Named Arguments (Requires terminal flags)
+    parser.add_argument('--map_dir', help='Directory to save maps to', required=True)
+    parser.add_argument('--mast_dir', help='Directory where the map is stored on the robot', required=True)
+    parser.add_argument('--dist', type=float, help='Distance in meters', required=True)
+    parser.add_argument('--end_n',type=int,help='end n',required=False)
+    parser.add_argument('--or_deg',type=float,help='or_deg',required=False, default=0)
+    
 
     options=parser.parse_args(argv)
-    if options.start_n<1:
-        options.start_n=1
-
-    if options.end_n<options.start_n:
-        options.end_n=options.start_n-1
     
 
     #2. create sdk & authenticate
@@ -126,12 +121,15 @@ def main(argv):
     command_client=robot.ensure_client(RobotCommandClient.default_service_name)
     robot_state_client=robot.ensure_client('robot-state')
     map_processing_client = robot.ensure_client(MapProcessingServiceClient.default_service_name)
+    world_object_client = robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
     state_client=robot.ensure_client(RobotStateClient.default_service_name)
-    world_object_client=robot.ensure_client(bosdyn.client.world_object.WorldObjectClient.default_service_name)
 
     #create directory
     if not os.path.exists(options.map_dir):
         os.makedirs(options.map_dir)
+
+
+    #4. acquire lease & execution
 
     #forcefully take the lease:
     lease_client.take()
@@ -144,16 +142,14 @@ def main(argv):
             robot.power_on(timeout_sec=20)
 
         ensure_recording_stopped(robot)
-
         #Command the robot to stand
         print("\nCommanding robot to stand...\n")
         stand=RobotCommandBuilder.synchro_stand_command()
         command_client.robot_command(stand)
-        time.sleep(2)
+        time.sleep(3)
 
         # Upload the map to the robot
         upload_map(graph_nav_client, options.mast_dir)
-        print(f"\nMaster map uploaded\n")
         nav_to_fid(robot,tag_id, dist_m=options.dist)
         dist_error_m, final_yaw_error = fine_align(robot, tag_id, options.dist, iter=100)
 
@@ -163,86 +159,92 @@ def main(argv):
         robot_state = robot_state_client.get_robot_state()
         fid_frame_name = f"fiducial_{tag_id}"
         
-        # Query the exact math relationship between the room and the AprilTag
         vision_tform_fiducial = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot, VISION_FRAME_NAME, fid_frame_name)
         
         if vision_tform_fiducial is not None:
-            # We want to move VISION points into the FIDUCIAL frame, so we invert the matrix
             to_fiducial_matrix = vision_tform_fiducial.inverse().to_matrix()
             print("Successfully captured anchor matrix.")
         else:
             print("WARNING: Fiducial not found in frame tree! Maps will drift.")
-            to_fiducial_matrix = np.eye(4) # Identity matrix fallback (does nothing)
+            to_fiducial_matrix = np.eye(4)
         # --------------------------
 
-        graph_nav_client.clear_graph() # clear unused graph data before starting mapping sequence
-        print(f"\nNavigating to fiducial\n")
-
-        for a in range(options.start_n, options.end_n+1):
+        degPT=options.or_deg
+        turn_relative(command_client,robot_state_client,degPT)
+        low=-0.1
+        high=0.1
+        for a in range(1, options.end_n + 1):
+            graph_nav_client.clear_graph()
+            start_state=state_client.get_robot_state()
+            st_batt_perc=start_state.battery_states[0].charge_percentage.value
+            start_time = time.time()
+            control_height(command_client,-0.1,robot_state_client)
             #battery check, won't run if less than 20%
             if not check_batt_perc(robot_state_client,limit=5.0):
                 print(f"\nBattery below 20%. Stopping at N={a}.")
                 break
-            #fine_align(robot, tag_id, options.dist, iter=100)
-            if 360 % a ==0:
-                graph_nav_client.clear_graph()
-                start_state=state_client.get_robot_state()
-                st_batt_perc=start_state.battery_states[0].charge_percentage.value
-                start_time = time.time()
-                degPT=360.0/a
-                fold_name=f"test_n_{a:02d}"
-                full_path=os.path.join(options.map_dir,fold_name)
-
-                print(f"\nStarting mapping with N={a} rotations, {degPT:.2f} degrees per rotation\n")
-
-                if not os.path.exists(full_path):
-                    os.makedirs(full_path)
                 
-                recording_client.start_recording()
-                print("\nStarting Recording\n")
-                time.sleep(0.1)
+            fold_name=f"test_n_{a:02d}"
+            full_path=os.path.join(options.map_dir,fold_name)
 
-                for b in range(a):
-                    print(f"\n[N={a} Step{b+1}/{a}] Rotating {degPT:.2f} degrees\n")
 
+            if not os.path.exists(full_path):
+                os.makedirs(full_path)
+                
+            #graph_nav_client.clear_graph() got error saying call stop recording first
+            recording_client.start_recording()
+            print("\nStarting Recording\n")
+            time.sleep(0.1)
+            
+            step=(high-low)/a
+            cur_h=low
+            for b in range(a):
+                if a!=1:
                     #snapshot
                     recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
-                    #time.sleep(2)#need to have this so it goes on when its ready, I remember needing this but don't have it written down anywhere, test if its actually needed
+                    #time.sleep(3)#need to have this so it goes on when its ready
                     print("\nCreating Waypoint\n")
-                    #turn
-                    turn_relative(command_client,robot_state_client,degPT)
-                    time.sleep(3)
-                if a==options.end_n:
-                    turn_relative(command_client,robot_state_client,degPT)
-                    print("\nTurning so its at the start")
-
-                #stop and download
-                recording_client.stop_recording()
-                time.sleep(0.5)
-                
-                # Use the module-level helper, passing the directory and the client
-                graph_nav_client.write_graph_and_snapshots(full_path)
-
-                #convert
-                print(f"\n[N{a}]Converting to ply...\n")
-                ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-                convert_map_to_ply_2(full_path,ply_name,a,to_fiducial_matrix) #new, pass matrix to converter
-                end_time = time.time()
-                end_state=state_client.get_robot_state()
-                end_batt_per=end_state.battery_states[0].charge_percentage.value
-                graph_nav_client.clear_graph()
-                duration_secs = end_time - start_time
-                batt_used_p=st_batt_perc-end_batt_per
-                if dist_error_m is None:
-                    print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
+                    cur_h+=step
+                    control_height(command_client,cur_h,robot_state_client)
+                    time.sleep(2)
                 else:
-                    log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error),batt_used_p=batt_used_p)
-            else:
-                print(f"\nN={a} is not a factor of 360, skipping to next N\n")
-                continue
+                    #snapshot
+                    recording_client.create_waypoint(waypoint_name=f"N{a}_Snap{b+1}")
+                    time.sleep(3)#need to have this so it goes on when its ready
+                    print("\nCreating Waypoint\n")
+                    time.sleep(3)
 
-        command_client.robot_command(RobotCommandBuilder.synchro_sit_command())
-                  
+            #stop and download
+            recording_client.stop_recording()
+            time.sleep(0.5)
+                
+            # Use the module-level helper, passing the directory and the client
+            try:
+                graph_nav_client.write_graph_and_snapshots(full_path)
+                print("Map successfully downloaded and saved.")
+            except Exception as e:
+                print(f"\nCRITICAL: Robot failed to transmit the map.")
+                print(f"Error Details: {e}")
+                print("ACTION: Map data is incomplete. You must delete the folder and retry the test.")
+                return False
+
+            #convert
+            print(f"\n[N{a}]Converting to ply...\n")
+            ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
+            convert_map_to_ply_2(full_path,ply_name,a,to_fiducial_matrix)
+            end_time = time.time()
+            end_state=state_client.get_robot_state()
+            end_batt_per=end_state.battery_states[0].charge_percentage.value
+            graph_nav_client.clear_graph()
+            duration_secs = end_time - start_time
+            batt_used_p=st_batt_perc-end_batt_per
+            if dist_error_m is None:
+                print(f"\n[N{a}] No fiducial detected during fine alignment. Skipping metric logging.\n")
+            else:
+                log_test_metrics(map_dir=options.map_dir, test_name=fold_name, duration_secs=duration_secs, dist_error_m=dist_error_m, yaw_error_deg=math.degrees(final_yaw_error),batt_used_p=batt_used_p)
+            
+    print("\nScript finished\n")
+
 if __name__ == "__main__":
     if not main(sys.argv[1:]):
         sys.exit(1)

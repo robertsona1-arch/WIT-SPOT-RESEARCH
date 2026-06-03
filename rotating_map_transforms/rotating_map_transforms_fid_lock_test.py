@@ -96,7 +96,7 @@ class TestRotatingMapLockMain(unittest.TestCase):
     @patch('rotating_map_transforms_fid_lock.os.makedirs')
     @patch('rotating_map_transforms_fid_lock.time.sleep') 
     @patch('rotating_map_transforms_fid_lock.time.time')  
-    @patch('rotating_map_transforms_fid_lock.convert_map_to_ply')
+    @patch('rotating_map_transforms_fid_lock.convert_map_to_ply_2')
     @patch('rotating_map_transforms_fid_lock.log_test_metrics')
     @patch('rotating_map_transforms_fid_lock.fine_align')
     @patch('rotating_map_transforms_fid_lock.nav_to_fid')
