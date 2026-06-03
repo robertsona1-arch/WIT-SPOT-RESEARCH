@@ -128,7 +128,7 @@ def turn_relative(command_client,robot_state_client,yaw_deg):
 
     time.sleep(duration+0.5)
 
-def convert_map_to_ply(map_dir, output_file,n): 
+def convert_map_to_ply(map_dir, output_file,n, transform_matrix=None): #none means its optional 
     """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
     #removed the tranformation from frame 1, don't need it
     snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
@@ -197,6 +197,105 @@ def convert_map_to_ply(map_dir, output_file,n):
                     all_points.append(global_p)
                 else:
                     all_points.append(p)
+
+        # Write to PLY format
+        with open(output_file, 'w') as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write(f"element vertex {len(all_points)}\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            f.write("end_header\n")
+            
+            for p in all_points:
+                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
+                
+    except Exception as e:
+        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
+
+def convert_map_to_ply_2(map_dir, output_file, n, transform_matrix=None): #none means its optional 
+    """Extracts points directly from the raw Protobuf files and saves a .PLY file"""
+    #removed the tranformation from frame 1, don't need it
+    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    if n!=1:
+        graph_path=os.path.join(map_dir, 'graph')
+    
+    if not os.path.exists(snap_dir):
+        print(f"  [ERROR] Could not find 'waypoint_snapshots' inside {map_dir}")
+        return
+    
+    if n!=1:
+        if not os.path.exists(graph_path):
+            print(f"\n graph address error\n")
+            return
+
+    if n!=1:
+        #New, read graph to get transformations
+        graph=map_pb2.Graph()
+        with open(graph_path,'rb') as f:
+            graph.ParseFromString(f.read())
+
+        #Map each waypoint ID to its specifc KO transform
+        waypoint_transforms={}
+        for wp in graph.waypoints:
+            #waypoint_tform_ko takes points from KO and puts them in Waypoint. 
+            #we need the inverse: takes points from Waypoint and puts them in KO, so we invert the transform
+            #kinematic odometry (KO) is the robot's internal estimate of its position, so we want to transform the point cloud from the waypoint frame back to the KO frame for consistency across snapshots
+            wp_tform_ko=math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+            ko_tform_wp=wp_tform_ko.inverse()#take the inverse
+            waypoint_transforms[wp.snapshot_id]=ko_tform_wp #changed from wp.id because it couldnt find the graphs
+
+    all_points = []
+    
+    try:
+        files = os.listdir(snap_dir)
+        for filename in files:
+            # Ignore macOS hidden system files that crash the binary parser
+            if filename == '.DS_Store':
+                continue
+                
+            file_path = os.path.join(snap_dir, filename)
+            snapshot = map_pb2.WaypointSnapshot()
+            
+            with open(file_path, 'rb') as f:
+                snapshot.ParseFromString(f.read())
+                
+            cloud = snapshot.point_cloud
+            if not cloud.data:
+                continue
+
+            if n!=1:
+                #get specific transform for this snapshot
+                if snapshot.id not in waypoint_transforms:
+                    print(f"\nNo tranform found for waypoint {snapshot.id}, skipping this snapshot\n")
+                    continue
+                ko_tform_wp=waypoint_transforms[snapshot.id]
+
+            #unpack and transform points
+            iter_points = struct.iter_unpack('<3f', cloud.data)
+            for p in iter_points:
+                if n!=1:
+                    #apply transformation matrix to align the frame w/ origin frame
+                    #transformation_point handles 3d vector rotation+translation
+                    global_p=ko_tform_wp.transform_point(p[0],p[1],p[2])
+                    all_points.append(global_p)
+                else:
+                    all_points.append(p)
+
+        #new: apply the 4x4 transform matrix to the entire point cloud at once
+        if transform_matrix is not None and len(all_points) > 0:
+            #new: convert list to a numpy array for fast C-backend matrix math
+            pts = np.array(all_points)
+            
+            #new: pad the array with a column of 1s to allow 4x4 homogeneous multiplication
+            pts_homo = np.hstack((pts, np.ones((pts.shape[0], 1))))
+            
+            #new: apply the transformation matrix (transpose handles the correct axis broadcasting)
+            transformed_pts = pts_homo.dot(transform_matrix.T)
+            
+            #new: extract the shifted X, Y, and Z columns and overwrite the original list
+            all_points = transformed_pts[:, :3].tolist()
 
         # Write to PLY format
         with open(output_file, 'w') as f:
