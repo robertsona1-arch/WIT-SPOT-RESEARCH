@@ -313,6 +313,79 @@ def convert_map_to_ply_2(map_dir, output_file, n, transform_matrix=None): #none 
     except Exception as e:
         print(f"  [CRITICAL ERROR] Conversion failed: {e}")
 
+def convert_map_to_ply_3(map_dir, output_file, n, transform_matrix=None):
+    """Extracts points from Protobuf files, maps them to Odom, and applies global transforms."""
+    snap_dir = os.path.join(map_dir, 'waypoint_snapshots')
+    graph_path = os.path.join(map_dir, 'graph')
+    
+    if not os.path.exists(snap_dir) or not os.path.exists(graph_path):
+        print(f"  [ERROR] Missing snapshots or graph inside {map_dir}")
+        return
+
+    # Read graph to get transformations for ALL snapshots
+    graph = map_pb2.Graph()
+    with open(graph_path, 'rb') as f:
+        graph.ParseFromString(f.read())
+
+    waypoint_transforms = {}
+    for wp in graph.waypoints:
+        wp_tform_ko = math_helpers.SE3Pose.from_proto(wp.waypoint_tform_ko)
+        ko_tform_wp = wp_tform_ko.inverse() 
+        waypoint_transforms[wp.snapshot_id] = ko_tform_wp 
+
+    all_points = []
+    
+    try:
+        files = os.listdir(snap_dir)
+        for filename in files:
+            if filename == '.DS_Store':
+                continue
+                
+            file_path = os.path.join(snap_dir, filename)
+            snapshot = map_pb2.WaypointSnapshot()
+            
+            with open(file_path, 'rb') as f:
+                snapshot.ParseFromString(f.read())
+                
+            cloud = snapshot.point_cloud
+            if not cloud.data:
+                continue
+
+            if snapshot.id not in waypoint_transforms:
+                print(f"\nNo transform found for waypoint {snapshot.id}, skipping.\n")
+                continue
+                
+            ko_tform_wp = waypoint_transforms[snapshot.id]
+
+            # Unpack and transform ALL points to the Kinematic Odometry frame
+            iter_points = struct.iter_unpack('<3f', cloud.data)
+            for p in iter_points:
+                global_p = ko_tform_wp.transform_point(p[0], p[1], p[2])
+                all_points.append(global_p)
+
+        # Apply the global 4x4 Anchor matrix if provided
+        if transform_matrix is not None and len(all_points) > 0:
+            pts = np.array(all_points)
+            pts_homo = np.hstack((pts, np.ones((pts.shape[0], 1))))
+            transformed_pts = pts_homo.dot(transform_matrix.T)
+            all_points = transformed_pts[:, :3].tolist()
+
+        # Write to PLY format
+        with open(output_file, 'w') as f:
+            f.write("ply\n")
+            f.write("format ascii 1.0\n")
+            f.write(f"element vertex {len(all_points)}\n")
+            f.write("property float x\n")
+            f.write("property float y\n")
+            f.write("property float z\n")
+            f.write("end_header\n")
+            
+            for p in all_points:
+                f.write(f"{p[0]:.6f} {p[1]:.6f} {p[2]:.6f}\n")
+                
+    except Exception as e:
+        print(f"  [CRITICAL ERROR] Conversion failed: {e}")
+
 def nav_to_fid(robot, tag_id, dist_m):
     graph_nav_client = robot.ensure_client(GraphNavClient.default_service_name)
     world_object_client = robot.ensure_client(WorldObjectClient.default_service_name)

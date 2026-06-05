@@ -1,8 +1,8 @@
 """
-standing_map_lock.py
+standing_anchor.py
 
-mac - python3 standing_map_lock.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
-windows - python standing_map_lock.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
+mac - python3 standing_anchor.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
+windows - python standing_anchor.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" --mast_dir "MAST_DIR" --dist 3.5 --end_n 20 --or_deg <0 or 180>
 
 This script records maps with the robot standing. The amount of snapshots per map will increase by 2 starting from 1. 
 The robot will navigate to the fiducial before starting recording. 
@@ -17,8 +17,8 @@ Written by Adam Robertson, Wentworth Institute of Technology, School of Engineer
 WIT SPOT Research Group
 Prof. Latif 
 Contributors: Patrick Woolf, Geoffery Siebert
-Date Created: 6/2/2026
-Last Updated: 6/2/2026
+Date Created: 6/3/2026
+Last Updated: 6/3/2026
 """
 
 #general stuff
@@ -158,24 +158,40 @@ def main(argv):
                 
         if target_tag is not None:
             fid_frame_name = target_tag.apriltag_properties.frame_name_fiducial
+            
+            # 1. Chain Odom -> Vision -> Fiducial
+            robot_state = robot_state_client.get_robot_state()
+            odom_tform_vision = get_a_tform_b(robot_state.kinematic_state.transforms_snapshot, ODOM_FRAME_NAME, VISION_FRAME_NAME)
             vision_tform_fiducial = get_a_tform_b(target_tag.transforms_snapshot, VISION_FRAME_NAME, fid_frame_name)
             
-            # 1. Get the raw snapped matrix (Fiducial Frame)
-            raw_fiducial_matrix = vision_tform_fiducial.inverse().to_matrix()
-            
-            # 2. THE AXIS PERMUTATION MATRIX
-            # Explicitly maps [X_new = -Z_old], [Y_new = X_old], [Z_new = -Y_old]
-            axis_swap_matrix = np.array([
-                [ 0.0,  0.0, -1.0,  0.0],
-                [ 1.0,  0.0,  0.0,  0.0],
-                [ 0.0, -1.0,  0.0,  0.0],
-                [ 0.0,  0.0,  0.0,  1.0]
-            ])
-            
-            # 3. Apply the permutation to the raw matrix
-            to_fiducial_matrix = axis_swap_matrix @ raw_fiducial_matrix
-            
-            print(f"Successfully captured and mapped anchor matrix for Tag {tag_id}.")
+            if odom_tform_vision is not None and vision_tform_fiducial is not None:
+                odom_tform_fiducial = odom_tform_vision * vision_tform_fiducial
+                
+                fid_pos = odom_tform_fiducial.position
+                fid_rot = odom_tform_fiducial.rotation
+                
+                # 2. Extract Normal and force Z=0 for a flat floor
+                wall_normal = fid_rot.transform_point(0.0, 0.0, 1.0)
+                x_axis = np.array([-wall_normal[0], -wall_normal[1], 0.0])
+                x_axis = x_axis / np.linalg.norm(x_axis) 
+                z_axis = np.array([0.0, 0.0, 1.0]) # Gravity locked
+                y_axis = np.cross(z_axis, x_axis)
+                
+                # 3. Build the 4x4 Anchor
+                flat_anchor_matrix = np.eye(4)
+                flat_anchor_matrix[:3, 0] = x_axis
+                flat_anchor_matrix[:3, 1] = y_axis
+                flat_anchor_matrix[:3, 2] = z_axis
+                flat_anchor_matrix[0, 3] = fid_pos.x
+                flat_anchor_matrix[1, 3] = fid_pos.y
+                flat_anchor_matrix[2, 3] = 0.0 
+                
+                # 4. Invert to map points TO the Anchor
+                to_fiducial_matrix = np.linalg.inv(flat_anchor_matrix)
+                print(f"Successfully calculated gravity-aligned Flat Anchor for Tag {tag_id}.")
+            else:
+                print("WARNING: Frame chain broken. Missing ODOM or VISION link.")
+                to_fiducial_matrix = np.eye(4)
         else:
             print(f"WARNING: Tag {tag_id} not found in World Objects! Maps will drift.")
             to_fiducial_matrix = np.eye(4)
