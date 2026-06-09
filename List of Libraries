@@ -20,7 +20,10 @@ import open3d as o3d
 import csv
 import json
 import glob
-import pandas  
+import pandas 
+import re 
+import seaborn as sns
+import matplotlib.pyplot as plt
 
 #bd specific imports
 import google.protobuf.timestamp_pb2

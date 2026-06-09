@@ -40,6 +40,7 @@ import csv
 import json
 import glob
 import pandas  
+import re
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -741,3 +742,24 @@ def calculate_aabb_volume(points, x_range, y_range):
     
     return volume, len(filtered_points)
 
+def parse_alignment_log(log_path):
+    """Parses the text log and extracts metrics using Regex."""
+    metrics = {}
+    if not os.path.exists(log_path):
+        print(f"Warning: Log file not found at {log_path}. Metrics will be blank.")
+        return metrics
+        
+    # Regex pattern to capture the digits from your specific string format
+    pattern = r"Test:\s*test_n_(\d+)\s*\|\s*Time:\s*([\d\.]+)s\s*\|\s*Dist Error:\s*([\d\.]+)m\s*\|\s*Yaw Error:\s*([-\d\.]+)\s*deg"
+    
+    with open(log_path, 'r') as f:
+        for line in f:
+            match = re.search(pattern, line)
+            if match:
+                test_num = int(match.group(1))
+                metrics[test_num] = {
+                    'Time_s': float(match.group(2)),
+                    'Dist_Error_m': float(match.group(3)),
+                    'Yaw_Error_deg': float(match.group(4))
+                }
+    return metrics

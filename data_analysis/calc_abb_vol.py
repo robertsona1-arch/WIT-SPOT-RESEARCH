@@ -22,7 +22,7 @@ WIT SPOT Research Group
 Advisors: Prof. Tahmid Latif, Prof. Afsaneh Ghanavati
 Contributors: Adam Robertson, Geoffrey Siebert, Ryan Staley
 Date Created: 05/31/2026
-Last Updated: 05/31/2026
+Last Updated: 06/8/2026
 """
 
 #general stuff
@@ -42,6 +42,7 @@ import csv
 import json
 import glob
 import pandas
+import re
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -79,7 +80,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import calculate_aabb_volume
+from leo_funcs import calculate_aabb_volume, parse_alignment_log
 
 def main():
     parser = argparse.ArgumentParser(description="Batch process AABB volumes to Excel using local config.")
@@ -87,37 +88,29 @@ def main():
     
     options = parser.parse_args()
 
-    # 1. AUTOMATION STEP: Dynamically discover the JSON configuration file in the target folder
+    # 1. Load Configurations and Logs
     json_file_n = os.path.join(options.folder, "area_bounds_n.json")
     json_file_1 = os.path.join(options.folder, "area_bounds_1.json")
+    log_file = os.path.join(options.folder, "alignment_metrics_log.txt")
     
-    if not os.path.exists(json_file_n):
-        print(f"Error: No JSON configuration file found inside: {options.folder}")
-        print("Please ensure your area configuration file is placed directly in that folder.")
+    if not os.path.exists(json_file_n) or not os.path.exists(json_file_1):
+        print(f"Error: Missing JSON configuration files inside: {options.folder}")
         return
-    if not os.path.exists(json_file_1):
-        print(f"Error: No JSON configuration file found inside: {options.folder}")
-        print("Please ensure your area configuration file is placed directly in that folder.")
-        return
-        
-    config_path_n = json_file_n
-    config_path_1 = json_file_1
 
-    print(f"\nLoaded configuration file: {config_path_n}\n")
-    print(f"\nLoaded configuration file: {config_path_1}\n")
+    # Parse the text log into memory
+    log_metrics = parse_alignment_log(log_file)
 
-    # Load Area Configurations
-    with open(config_path_1, 'r') as f:
-        config_data_1 = json.load(f)
-    areas_1 = config_data_1.get("areas", {})
+    with open(json_file_1, 'r') as f:
+        areas_1 = json.load(f).get("areas", {})
 
-    with open(config_path_n, 'r') as f:
-        config_data_n = json.load(f)
-    areas_n = config_data_n.get("areas", {})
+    with open(json_file_n, 'r') as f:
+        areas_n = json.load(f).get("areas", {})
 
     results_data = []
+    log_format="%Y-%m-%d %H:%M:%S" 
 
-    # Loop through subfolders test_n_01 to test_n_20
+
+    # 2. Process Data
     for a in range(1, 21):
         subfolder_name = f"test_n_{a:02d}"
         subfolder_path = os.path.join(options.folder, subfolder_name)
@@ -125,25 +118,21 @@ def main():
         if not os.path.exists(subfolder_path):
             continue
 
-        # Find the .ply file inside this specific subfolder
         ply_files = glob.glob(os.path.join(subfolder_path, "*.ply"))
-        
         if not ply_files:
-            print(f"Warning: No .ply file found inside {subfolder_name}. Skipping.")
             continue
             
         filepath = ply_files[0]
         print(f"Processing {filepath}...")
 
-        # Load file into memory
         pcd = o3d.io.read_point_cloud(filepath)
         points = np.asarray(pcd.points)
 
-        # Analyze the areas defined in the discovered JSON
-        if a == 1:
-            areas = areas_1
-        else:
-            areas = areas_n
+        areas = areas_1 if a == 1 else areas_n
+        
+        # Grab the alignment metrics for this specific test run (default to None if missing)
+        test_metrics = log_metrics.get(a, {'Time_s': None, 'Dist_Error_m': None, 'Yaw_Error_deg': None})
+
         for area_name, bounds in areas.items():
             x_range = bounds["x_range"]
             y_range = bounds["y_range"]
@@ -154,17 +143,29 @@ def main():
                 'Test_Run': a,
                 'Area_Name': area_name,
                 'Point_Count': point_count,
-                'Volume_m3': round(volume, 6)
+                'Volume_m3': round(volume, 6),
+                'Time_s': test_metrics['Time_s'],
+                'Dist_Error_m': test_metrics['Dist_Error_m'],
+                'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
             })
 
     if not results_data:
         print("No data processed. Exiting.")
         return
 
-    # Convert to DataFrame and save
-    df = pandas.DataFrame(results_data)
-    excel_output_path = os.path.join(options.folder, 'volume_analysis.xlsx')
+    # 3. DataFrame Math & Export
+    df = pandas.DataFrame(results_data) #column gets renamed to just 'Time_s' 
     
+    # --- PIPELINE MATH EXAMPLE ---
+    # Pandas handles array math automatically. This prevents you from having to drag formulas in Excel.
+    # We use np.where to avoid divide-by-zero errors if volume is exactly 0.
+    df['Density_pts_per_m3'] = np.where(df['Volume_m3'] > 0, round(df['Point_Count'] / df['Volume_m3'], 2), 0)
+    df['Time_per_snapshot'] = np.where(df['Time_s'] > 0, round(df['Time_s'] / df['Test_Run'], 2), 0)
+    df['Density per time']= np.where(df['Time_s'] > 0, round(df['Density_pts_per_m3'] / df['Time_s'], 2), 0)
+    df['Density_per_snapshot'] = np.where(df['Test_Run'] > 0, round(df['Density_pts_per_m3'] / df['Test_Run'], 2), 0)
+    df['Average_Points_Per_Run'] = round(df.groupby('Test_Run')['Point_Count'].transform('mean'), 2)
+
+    excel_output_path = os.path.join(options.folder, 'volume_analysis.xlsx')
     df.to_excel(excel_output_path, index=False, engine='openpyxl')
     print(f"Batch processing complete. Output saved to: {excel_output_path}")
 
