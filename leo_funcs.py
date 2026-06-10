@@ -818,3 +818,46 @@ def create_plot_tl(df, x_col, y_col, title, x_label, y_label, output_path, color
     
     plt.savefig(output_path, dpi=300)
     plt.close()
+
+def create_plot_expd(df, x_col, y_col, title, x_label, y_label, output_path, color='blue'):
+    """Standardizes plot layout, calculates an exponential decay trendline, and plots it."""
+    plt.figure(figsize=(10, 6))
+    
+    # 1. Clean data and ensure y_col has values > 0 (logarithm of 0 or negative is undefined)
+    clean_df = df[[x_col, y_col]].dropna()
+    clean_df = clean_df[(np.isfinite(clean_df[x_col])) & (clean_df[y_col] > 0)]
+    
+    if len(clean_df) < 2:
+        print(f"  [Warning] Not enough valid positive data points to plot exponential decay for {y_col}.")
+        return
+
+    x_data = clean_df[x_col].to_numpy()
+    y_data = clean_df[y_col].to_numpy()
+
+    # 2. Plot the raw engineering data markers
+    seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2, color=color, label='Raw Data')
+
+    # 3. Calculate Exponential Fit using Log Transformation: ln(y) = b*x + ln(a)
+    # Returns [b (decay constant), ln_a (intercept)]
+    b, ln_a = np.polyfit(x_data, np.log(y_data), 1)
+    a = np.exp(ln_a) # Recover the original amplitude coefficient
+
+    # Generate coordinates along the exponential curve
+    x_trend = np.linspace(x_data.min(), x_data.max(), 100)
+    y_trend = a * np.exp(b * x_trend)
+
+    # 4. Plot the Exponential Trendline
+    # An exponential decay will yield a negative 'b' value
+    trend_label = f'Exp Fit (y = {a:.2f} * e^({b:.4f}*x))'
+    plt.plot(x_trend, y_trend, linestyle='--', color='black', linewidth=1.5, label=trend_label)
+
+    # 5. Formatting
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.xlabel(x_label, fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend(loc='best')
+    plt.tight_layout()
+    
+    plt.savefig(output_path, dpi=300)
+    plt.close()

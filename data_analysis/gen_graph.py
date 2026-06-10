@@ -82,7 +82,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import calculate_aabb_volume, parse_alignment_log, create_plot, create_plot_tl
+from leo_funcs import calculate_aabb_volume, parse_alignment_log, create_plot, create_plot_tl, create_plot_expd
 
 def main():
     parser = argparse.ArgumentParser(description="Generate engineering plots directly from computed Excel sheets.")
@@ -148,25 +148,25 @@ def main():
                     os.path.join(graphs_dir, 'Dashboard_AvgPointCount_vs_AvgDensity.png'), color='tab:brown')
         
         #Plot 7: Snap Count vs Average Points Per Snapshot
-        create_plot(df_avg, 'Snap_Count', 'Average Points Per Snapshot',
+        create_plot_expd(df_avg, 'Snap_Count', 'Average Points Per Snapshot',
                     'Global Metric: Average Points Per Snapshot vs Snap Count',
                     'Snap Count', 'Average Points Per Snapshot',
                     os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgPointsPerSnapshot.png'), color='tab:pink')
         
         #Plot 8 Time vs Average Points Per Time
-        create_plot(df_avg, 'Time_s', 'Average Points Per Time',
+        create_plot_tl(df_avg, 'Time_s', 'Average Points Per Time',
                     'Global Metric: Average Points Per Time vs Time',
                     'Time_s', 'Average Points Per Time',
                     os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgPointsPerTime.png'), color='tab:cyan')
         
         #Plot 9: Time vs Average Density Per Time
-        create_plot(df_avg, 'Time_s', 'Average Density Per Time',
+        create_plot_expd(df_avg, 'Time_s', 'Average Density Per Time',
                     'Global Metric: Average Density Per Time vs Time',
                     'Time_s', 'Average Density Per Time',
                     os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgDensityPerTime.png'), color='tab:gray')
         
         #Plot 10: Snap Count vs Average Density Per Snapshot
-        create_plot(df_avg, 'Snap_Count', 'Average Density Per Snapshot',
+        create_plot_tl(df_avg, 'Snap_Count', 'Average Density Per Snapshot',
                     'Global Metric: Average Density Per Snapshot vs Snap Count',
                     'Snap Count', 'Average Density Per Snapshot',
                     os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgDensityPerSnapshot.png'), color='tab:olive')
