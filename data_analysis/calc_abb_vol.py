@@ -22,7 +22,7 @@ WIT SPOT Research Group
 Advisors: Prof. Tahmid Latif, Prof. Afsaneh Ghanavati
 Contributors: Adam Robertson, Geoffrey Siebert, Ryan Staley
 Date Created: 05/31/2026
-Last Updated: 06/8/2026
+Last Updated: 06/9/2026
 """
 
 #general stuff

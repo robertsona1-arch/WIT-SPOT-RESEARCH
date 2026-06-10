@@ -22,7 +22,7 @@ WIT SPOT Research Group
 Advisors: Prof. Tahmid Latif, Prof. Afsaneh Ghanavati
 Contributors: Adam Robertson, Geoffrey Siebert, Ryan Staley
 Date Created: 06/08/2026
-Last Updated: 06/8/2026
+Last Updated: 06/9/2026
 """
 
 #general stuff
@@ -43,7 +43,7 @@ import json
 import glob
 import pandas 
 import re 
-import seaborn as sns
+import seaborn
 import matplotlib.pyplot as plt
 
 #bd specific imports
@@ -78,84 +78,134 @@ import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from leo_funcs import calculate_aabb_volume, parse_alignment_log, create_plot, create_plot_tl
+
 def main():
-    parser = argparse.ArgumentParser(description="Generate data visualization charts from volume analysis Excel data.")
-    parser.add_argument('--folder', required=True, help='Root directory containing volume_analysis.xlsx')
+    parser = argparse.ArgumentParser(description="Generate engineering plots directly from computed Excel sheets.")
+    parser.add_argument('--folder', required=True, help='Root directory containing volume_analysis_by_area.xlsx')
     options = parser.parse_args()
 
-    excel_path = os.path.join(options.folder, 'volume_analysis.xlsx')
+    excel_path = os.path.join(options.folder, 'volume_analysis_by_area.xlsx')
     
     if not os.path.exists(excel_path):
-        print(f"Error: Cannot find data file at {excel_path}")
+        print(f"Error: Cannot find generated Excel file at {excel_path}")
         return
 
-    # Load the processed DataFrame
-    df = pandas.read_excel(excel_path)
+    # Create a dedicated subdirectory for the output images to keep workspace clean
+    graphs_dir = os.path.join(options.folder, 'analysis_graphs')
+    os.makedirs(graphs_dir, exist_ok=True)
     
-    # Set a clean, professional grid style for engineering data
-    sns.set_theme(style="whitegrid")
+    seaborn.set_theme(style="whitegrid")
+    excel_file = pandas.ExcelFile(excel_path)
     
-    # ---------------------------------------------------------
-    # CHART 1: Volume Stability per Test Run (Bar Chart)
-    # ---------------------------------------------------------
-    plt.figure(figsize=(10, 5))
-    sns.barplot(data=df, x='Test_Run', y='Volume_m3', hue='Area_Name')
-    plt.title('AABB Volume Stability Across Test Runs (N=1 to N=20)', fontsize=14, fontweight='bold')
-    plt.ylabel('Volume (m³)', fontsize=12)
-    plt.xlabel('Test Run (Number of Snapshots / Rotations)', fontsize=12)
-    plt.legend(title='Monitored Bounding Boxes', loc='lower left')
-    
-    chart1_path = os.path.join(options.folder, 'plot_volume_stability.png')
-    plt.savefig(chart1_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"Generated: {chart1_path}")
+    print(f"Extracting metrics and writing plots to: {graphs_dir}\n")
 
-    # ---------------------------------------------------------
-    # CHART 2: Data Acquisition Efficiency (Time per Snapshot Line Chart)
-    # ---------------------------------------------------------
-    plt.figure(figsize=(10, 5))
-    # Drop duplicate rows since Time_per_snapshot_s is identical per Test_Run across areas
-    df_unique_runs = df.drop_duplicates(subset=['Test_Run'])
-    df_unique_time=df.drop_duplicates(subset=['Time_s'])
-    
-    sns.lineplot(data=df_unique_runs, x='Test_Run', y='Time_per_snapshot', marker='o', color='purple', linewidth=2.5)
-    plt.title('Data Acquisition Efficiency: Time per Snapshot', fontsize=14, fontweight='bold')
-    plt.ylabel('Time Per Snapshot (seconds)', fontsize=12)
-    plt.xlabel('Test Run (Total Snapshots in Sequence)', fontsize=12)
-    
-    chart2_path = os.path.join(options.folder, 'plot_snapshot_efficiency.png')
-    plt.savefig(chart2_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"Generated: {chart2_path}")
+    # =========================================================================
+    # 1. GRAPH GENERATION: AVERAGES DASHBOARD
+    # =========================================================================
+    if 'Averages_Dashboard' in excel_file.sheet_names:
+        print("Parsing [Averages_Dashboard] tab...")
+        df_avg = excel_file.parse('Averages_Dashboard')
+        
+        # Plot 1: Snap_Count vs Average Point Count
+        create_plot_tl(df_avg, 'Snap_Count', 'Average Point Count', 
+                    'Global Metric: Average Point Count vs Snap Count', 
+                    'Snap Count', 'Average Point Count', 
+                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgPointCount.png'), color='tab:blue')
 
-    # ---------------------------------------------------------
-    # CHART 3: Kinematic Drift: Distance vs. Yaw Error (Dual-Axis Line Chart)
-    # ---------------------------------------------------------
-    fig, ax1 = plt.subplots(figsize=(10, 5))
+        # Plot 2: Snap_Count vs Average Density
+        create_plot_tl(df_avg, 'Snap_Count', 'Average Density', 
+                    'Global Metric: Average Density vs Snap Count', 
+                    'Snap Count', 'Average Density (Pts/m³)', 
+                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgDensity.png'), color='tab:orange')
+
+        # Plot 3: Time_s vs Average Point Count
+        create_plot_tl(df_avg, 'Time_s', 'Average Point Count', 
+                    'Global Metric: Average Point Count vs Total Time', 
+                    'Time_s', 'Average Point Count', 
+                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgPointCount.png'), color='tab:green')
+
+        # Plot 4: Time_s vs Average Density
+        create_plot_tl(df_avg, 'Time_s', 'Average Density', 
+                    'Global Metric: Average Density vs Total Time', 
+                    'Time_s', 'Average Density (Pts/m³)', 
+                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgDensity.png'), color='tab:red')
+
+        #Plot 5: Time_s vs Snap_Count
+        create_plot_tl(df_avg, 'Time_s', 'Snap_Count',
+                    'Global Metric: Snap Count Evolution vs Total Time',
+                    'Time_s', 'Snap Count',
+                    os.path.join(graphs_dir, 'Dashboard_Time_vs_SnapCount.png'), color='tab:purple')
+
+        #Plot 6: Average Point Count vs Average Density
+        create_plot_tl(df_avg, 'Average Point Count', 'Average Density',
+                    'Global Metric: Average Density vs Average Point Count',
+                    'Average Point Count', 'Average Density (Pts/m³)',
+                    os.path.join(graphs_dir, 'Dashboard_AvgPointCount_vs_AvgDensity.png'), color='tab:brown')
+        
+        #Plot 7: Snap Count vs Average Points Per Snapshot
+        create_plot(df_avg, 'Snap_Count', 'Average Points Per Snapshot',
+                    'Global Metric: Average Points Per Snapshot vs Snap Count',
+                    'Snap Count', 'Average Points Per Snapshot',
+                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgPointsPerSnapshot.png'), color='tab:pink')
+        
+        #Plot 8 Time vs Average Points Per Time
+        create_plot(df_avg, 'Time_s', 'Average Points Per Time',
+                    'Global Metric: Average Points Per Time vs Time',
+                    'Time_s', 'Average Points Per Time',
+                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgPointsPerTime.png'), color='tab:cyan')
+        
+        #Plot 9: Time vs Average Density Per Time
+        create_plot(df_avg, 'Time_s', 'Average Density Per Time',
+                    'Global Metric: Average Density Per Time vs Time',
+                    'Time_s', 'Average Density Per Time',
+                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgDensityPerTime.png'), color='tab:gray')
+        
+        #Plot 10: Snap Count vs Average Density Per Snapshot
+        create_plot(df_avg, 'Snap_Count', 'Average Density Per Snapshot',
+                    'Global Metric: Average Density Per Snapshot vs Snap Count',
+                    'Snap Count', 'Average Density Per Snapshot',
+                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgDensityPerSnapshot.png'), color='tab:olive')
+
+    # =========================================================================
+    # 2. GRAPH GENERATION: INDIVIDUAL ISOLATED AREAS
+    # =========================================================================
+    # Isolate only the area specific sheets by filtering out the master and summary ledgers
+    area_sheets = [s for s in excel_file.sheet_names if s not in ['Master_Data', 'Averages_Dashboard']]
     
-    # Left Y-Axis: Distance Error
-    color = 'tab:red'
-    ax1.set_xlabel('Test Run (N)', fontsize=12)
-    ax1.set_ylabel('Fiducial Distance Error (meters)', color=color, fontsize=12)
-    sns.lineplot(data=df_unique_runs, x='Test_Run', y='Dist_Error_m', color=color, marker='s', ax=ax1, linewidth=2)
-    ax1.tick_params(axis='y', labelcolor=color)
-    
-    # Right Y-Axis: Yaw Error
-    ax2 = ax1.twinx()  
-    color = 'tab:blue'
-    ax2.set_ylabel('Fiducial Yaw Error (degrees)', color=color, fontsize=12)
-    sns.lineplot(data=df_unique_runs, x='Test_Run', y='Yaw_Error_deg', color=color, marker='^', ax=ax2, linewidth=2)
-    ax2.tick_params(axis='y', labelcolor=color)
-    
-    plt.title('Kinematic Tracking Alignment Errors Across Test Runs', fontsize=14, fontweight='bold')
-    fig.tight_layout()  
-    
-    chart3_path = os.path.join(options.folder, 'plot_alignment_errors.png')
-    plt.savefig(chart3_path, dpi=300, bbox_inches='tight')
-    plt.close()
-    print(f"Generated: {chart3_path}")
-    
-    print("\nAll engineering plots successfully output to your folder.")
+    for area in area_sheets:
+        print(f"Parsing [{area}] tab...")
+        df_area = excel_file.parse(area)
+        
+        # Plot 1: Snap_Count vs Point_Count
+        create_plot_tl(df_area, 'Snap_Count', 'Point_Count', 
+                    f'{area}: Point Count vs Snap Count', 
+                    'Snap Count', 'Point Count', 
+                    os.path.join(graphs_dir, f'{area}_Snap_vs_PointCount.png'), color='tab:blue')
+
+        # Plot 2: Snap_Count vs Density: Pts Per m3
+        create_plot_tl(df_area, 'Snap_Count', 'Density: Pts Per m3', 
+                    f'{area}: Spatial Density vs Snap Count', 
+                    'Snap Count', 'Density: Pts Per m3', 
+                    os.path.join(graphs_dir, f'{area}_Snap_vs_Density.png'), color='tab:orange')
+
+        # Plot 3: Time_s vs Point_Count
+        create_plot_tl(df_area, 'Time_s', 'Point_Count', 
+                    f'{area}: Point Count vs Total Time', 
+                    'Time_s', 'Point Count', 
+                    os.path.join(graphs_dir, f'{area}_Time_vs_PointCount.png'), color='tab:green')
+
+        # Plot 4: Time_s vs Density: Pts Per m3
+        create_plot_tl(df_area, 'Time_s', 'Density: Pts Per m3', 
+                    f'{area}: Spatial Density vs Total Time', 
+                    'Time_s', 'Density: Pts Per m3', 
+                    os.path.join(graphs_dir, f'{area}_Time_vs_Density.png'), color='tab:red')
+
+    print(f"\nExecution complete. All 34 plots output directly to: {graphs_dir}")
 
 if __name__ == "__main__":
     main()

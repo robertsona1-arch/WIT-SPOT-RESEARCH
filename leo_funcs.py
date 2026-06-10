@@ -39,8 +39,11 @@ import open3d as o3d
 import csv
 import json
 import glob
-import pandas  
-import re
+import pandas 
+import re 
+import seaborn
+import matplotlib.pyplot as plt
+import openpyxl
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -61,7 +64,7 @@ from bosdyn.client.recording import GraphNavRecordingServiceClient
 from bosdyn.client import map_processing
 from bosdyn.client.robot import Robot
 from bosdyn.client.lease import LeaseKeepAlive
-from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, ODOM_FRAME_NAME, get_a_tform_b
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, get_a_tform_b, VISION_FRAME_NAME
 #from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
 from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
 from bosdyn.client.robot_state import RobotStateClient
@@ -73,7 +76,6 @@ from bosdyn.client.world_object import WorldObjectClient
 import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
-
 
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -763,3 +765,56 @@ def parse_alignment_log(log_path):
                     'Yaw_Error_deg': float(match.group(4))
                 }
     return metrics
+
+def create_plot(df, x_col, y_col, title, x_label, y_label, output_path, color='blue'):
+    """Standardizes plot layout configuration, grid parameters, and clears memory."""
+    plt.figure(figsize=(10, 6))
+    seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2.5, color=color)
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.xlabel(x_label, fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+def create_plot_tl(df, x_col, y_col, title, x_label, y_label, output_path, color='blue'):
+    """Standardizes plot layout, calculates a linear regression trendline, and plots it."""
+    plt.figure(figsize=(10, 6))
+    
+    # 1. Clean the data slices of NaN or Infinite values to prevent polyfit from crashing
+    clean_df = df[[x_col, y_col]].dropna()
+    clean_df = clean_df[np.isfinite(clean_df[x_col]) & np.isfinite(clean_df[y_col])]
+    
+    if len(clean_df) < 2:
+        print(f"  [Warning] Not enough data points to plot trendline for {y_col}.")
+        return
+
+    x_data = clean_df[x_col].to_numpy()
+    y_data = clean_df[y_col].to_numpy()
+
+    # 2. Plot the raw engineering data markers
+    seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2, color=color, label='Raw Data')
+
+    # 3. Calculate Linear Regression: y = mx + b
+    # slope (m), intercept (b) = polyfit(x, y, degree=1)
+    slope, intercept = np.polyfit(x_data, y_data, 1)
+    
+    # Generate coordinates along the trendline
+    x_trend = np.linspace(x_data.min(), x_data.max(), 100)
+    y_trend = slope * x_trend + intercept
+
+    # 4. Plot the Trendline
+    trend_label = f'Trendline (m={slope:.4f})'
+    plt.plot(x_trend, y_trend, linestyle='--', color='black', linewidth=1.5, label=trend_label)
+
+    # 5. Formatting
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.xlabel(x_label, fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend(loc='best')
+    plt.tight_layout()
+    
+    plt.savefig(output_path, dpi=300)
+    plt.close()

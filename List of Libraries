@@ -22,7 +22,7 @@ import json
 import glob
 import pandas 
 import re 
-import seaborn as sns
+import seaborn
 import matplotlib.pyplot as plt
 import openpyxl
 
