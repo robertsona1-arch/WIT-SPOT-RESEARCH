@@ -43,6 +43,8 @@ import json
 import glob
 import pandas
 import re
+import openpyxl
+from openpyxl import utils
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -140,11 +142,11 @@ def main():
             volume, point_count = calculate_aabb_volume(points, x_range, y_range)
             
             results_data.append({
-                'Test_Run': a,
+                'Snap_Count': a,
+                'Time_s': test_metrics['Time_s'],
                 'Area_Name': area_name,
                 'Point_Count': point_count,
                 'Volume_m3': round(volume, 6),
-                'Time_s': test_metrics['Time_s'],
                 'Dist_Error_m': test_metrics['Dist_Error_m'],
                 'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
             })
@@ -154,20 +156,84 @@ def main():
         return
 
     # 3. DataFrame Math & Export
-    df = pandas.DataFrame(results_data) #column gets renamed to just 'Time_s' 
+    df_master = pandas.DataFrame(results_data) #column gets renamed to just 'Time_s' 
     
     # --- PIPELINE MATH EXAMPLE ---
     # Pandas handles array math automatically. This prevents you from having to drag formulas in Excel.
     # We use np.where to avoid divide-by-zero errors if volume is exactly 0.
-    df['Density_pts_per_m3'] = np.where(df['Volume_m3'] > 0, round(df['Point_Count'] / df['Volume_m3'], 2), 0)
-    df['Time_per_snapshot'] = np.where(df['Time_s'] > 0, round(df['Time_s'] / df['Test_Run'], 2), 0)
-    df['Density per time']= np.where(df['Time_s'] > 0, round(df['Density_pts_per_m3'] / df['Time_s'], 2), 0)
-    df['Density_per_snapshot'] = np.where(df['Test_Run'] > 0, round(df['Density_pts_per_m3'] / df['Test_Run'], 2), 0)
-    df['Average_Points_Per_Run'] = round(df.groupby('Test_Run')['Point_Count'].transform('mean'), 2)
+    df_master['Time Per Snapshot'] = np.where(df_master['Time_s'] > 0, round(df_master['Time_s'] / df_master['Snap_Count'], 2), 0)
+    df_master['Density: Pts Per m3'] = np.where(df_master['Volume_m3'] > 0, round(df_master['Point_Count'] / df_master['Volume_m3'], 2), 0)
+    df_master['Points Per Snapshot'] = np.where(df_master['Snap_Count'] > 0, round(df_master['Point_Count'] / df_master['Snap_Count'], 2), 0)
+    df_master['Density Per Time']= np.where(df_master['Time_s'] > 0, round(df_master['Density: Pts Per m3'] / df_master['Time_s'], 2), 0)
+    df_master['Density Per Snapshot'] = np.where(df_master['Snap_Count'] > 0, round(df_master['Density: Pts Per m3'] / df_master['Snap_Count'], 2), 0)
+    df_master['Points Per Time'] = np.where(df_master['Time_s'] > 0, round(df_master['Point_Count'] / df_master['Time_s'], 2), 0)
+    df_master['Average Point Count'] = round(df_master.groupby('Snap_Count')['Point_Count'].transform('mean'), 2)
+    df_master['Average Density'] = round(df_master.groupby('Snap_Count')['Density: Pts Per m3'].transform('mean'), 6)
+    df_master['Average Points Per Snapshot'] = round(df_master.groupby('Snap_Count')['Points Per Snapshot'].transform('mean'), 2)
+    df_master['Average Points Per Time']=round(df_master.groupby('Snap_Count')['Points Per Time'].transform('mean'), 2)
+    df_master['Average Density Per Time']=round(df_master.groupby('Snap_Count')['Density Per Time'].transform('mean'), 2)
+    df_master['Average Density Per Snapshot']=round(df_master.groupby('Snap_Count')['Density Per Snapshot'].transform('mean'), 2)
 
-    excel_output_path = os.path.join(options.folder, 'volume_analysis.xlsx')
-    df.to_excel(excel_output_path, index=False, engine='openpyxl')
-    print(f"Batch processing complete. Output saved to: {excel_output_path}")
+    # CONSTRUCT THE AVERAGES DASHBOARD SHEET
+    # We group by Snap_Count and extract the mean of numeric columns across all 6 areas
+    # Since Time, Dist_Error, and Yaw_Error are identical for all areas within a run, .first() safely grabs them
+    df_averages = df_master.groupby('Snap_Count').agg({
+        'Time_s': 'first',
+        'Average Point Count': 'first',
+        'Average Density': 'first',
+        'Average Points Per Snapshot': 'first',
+        'Average Points Per Time': 'first',
+        'Average Density Per Time': 'first',
+        'Average Density Per Snapshot': 'first',
+    }).reset_index()
+
+    # 4. EXCEL MULTI-TAB EXPORT PIPELINE
+    excel_output_path = os.path.join(options.folder, 'volume_analysis_by_area.xlsx')
+    print(f"\nExporting structured sheets to: {excel_output_path}\n")
+    
+    with pandas.ExcelWriter(excel_output_path, engine='openpyxl') as writer:
+        
+        # TAB 1: Master Data (The uncollapsed full history ledger)
+        df_master.to_excel(writer, sheet_name='Master_Data', index=False)
+        print("  --> Created worksheet tab: [Master_Data]")
+        
+        # TAB 2: Averages Dashboard (The aggregated overview tracking run performance)
+        df_averages.to_excel(writer, sheet_name='Averages_Dashboard', index=False)
+        print("  --> Created worksheet tab: [Averages_Dashboard] (Run-level summaries)")
+        
+        # TABS 3-8: Individual Area Sheets (Cleaned slices for specific spatial analysis)
+        unique_areas = sorted(df_master['Area_Name'].unique())
+        for area in unique_areas:
+            df_area_slice = df_master[df_master['Area_Name'] == area].copy()
+            
+            # Drop the string name since it matches the tab name, keeping columns streamlined
+            df_area_slice = df_area_slice.drop(columns=['Area_Name','Yaw_Error_deg','Dist_Error_m', 'Average Point Count','Average Density','Average Points Per Snapshot','Average Density Per Snapshot','Average Density Per Time','Average Points Per Time'])
+            
+            # Sanitize tab name string limits for the openpyxl backend
+            safe_tab_name = re.sub(r'[\*\\\/\? \:\[\]]', '_', area)[:31]
+            
+            df_area_slice.to_excel(writer, sheet_name=safe_tab_name, index=False)
+            print(f"  --> Created worksheet tab: [{safe_tab_name}]")
+
+            # --- THE AUTOMATED AUTOFIT LOOP ---
+        print("\nAdjusting column widths to prevent text clipping...")
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            
+            # Iterate over every single column in the worksheet
+            for col in worksheet.columns:
+                # Find the maximum character length among all cells in this column
+                # We cast to string to handle integers/floats accurately
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                
+                # Extract the alphanumeric letter coordinate for the column (e.g., 'A', 'B', 'AA')
+                col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                
+                # Apply the calculation: max length found + 3 buffer characters for visual padding
+                # We enforce a minimum width of 10 so thin data columns don't compress their headers
+                worksheet.column_dimensions[col_letter].width = max(max_len + 3, 10)
+
+    print("\nBatch export complete. All worksheets isolated and successfully output.")
 
 if __name__ == "__main__":
     main()
