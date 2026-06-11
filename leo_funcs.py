@@ -779,85 +779,87 @@ def create_plot(df, x_col, y_col, title, x_label, y_label, output_path, color='b
     plt.close()
 
 def create_plot_tl(df, x_col, y_col, title, x_label, y_label, output_path, color='blue'):
-    """Standardizes plot layout, calculates a linear regression trendline, and plots it."""
+    """Standardizes plot layout, calculates a linear trendline and its R² value."""
     plt.figure(figsize=(10, 6))
     
-    # 1. Clean the data slices of NaN or Infinite values to prevent polyfit from crashing
     clean_df = df[[x_col, y_col]].dropna()
     clean_df = clean_df[np.isfinite(clean_df[x_col]) & np.isfinite(clean_df[y_col])]
     
     if len(clean_df) < 2:
-        print(f"  [Warning] Not enough data points to plot trendline for {y_col}.")
         return
 
     x_data = clean_df[x_col].to_numpy()
     y_data = clean_df[y_col].to_numpy()
 
-    # 2. Plot the raw engineering data markers
+    # Plot raw data
     seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2, color=color, label='Raw Data')
 
-    # 3. Calculate Linear Regression: y = mx + b
-    # slope (m), intercept (b) = polyfit(x, y, degree=1)
+    # Linear Fit
     slope, intercept = np.polyfit(x_data, y_data, 1)
-    
-    # Generate coordinates along the trendline
+    y_pred = slope * x_data + intercept
+
+    # Calculate R²
+    ss_res = np.sum((y_data - y_pred) ** 2)
+    ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    # Plot Trendline
     x_trend = np.linspace(x_data.min(), x_data.max(), 100)
     y_trend = slope * x_trend + intercept
-
-    # 4. Plot the Trendline
-    trend_label = f'Trendline (m={slope:.4f})'
+    trend_label = f'Linear Fit (m={slope:.4f}, R²={r_squared:.4f})'
     plt.plot(x_trend, y_trend, linestyle='--', color='black', linewidth=1.5, label=trend_label)
 
-    # 5. Formatting
+    # Formatting
     plt.title(title, fontsize=14, fontweight='bold')
     plt.xlabel(x_label, fontsize=12)
     plt.ylabel(y_label, fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend(loc='best')
     plt.tight_layout()
-    
     plt.savefig(output_path, dpi=300)
     plt.close()
 
 def create_plot_expd(df, x_col, y_col, title, x_label, y_label, output_path, color='blue'):
-    """Standardizes plot layout, calculates an exponential decay trendline, and plots it."""
+    """Standardizes plot layout, calculates an exponential decay line and its R² value."""
     plt.figure(figsize=(10, 6))
     
-    # 1. Clean data and ensure y_col has values > 0 (logarithm of 0 or negative is undefined)
     clean_df = df[[x_col, y_col]].dropna()
     clean_df = clean_df[(np.isfinite(clean_df[x_col])) & (clean_df[y_col] > 0)]
     
     if len(clean_df) < 2:
-        print(f"  [Warning] Not enough valid positive data points to plot exponential decay for {y_col}.")
         return
 
     x_data = clean_df[x_col].to_numpy()
     y_data = clean_df[y_col].to_numpy()
 
-    # 2. Plot the raw engineering data markers
+    # Plot raw data
     seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2, color=color, label='Raw Data')
 
-    # 3. Calculate Exponential Fit using Log Transformation: ln(y) = b*x + ln(a)
-    # Returns [b (decay constant), ln_a (intercept)]
+    # Exponential Fit: ln(y) = b*x + ln(a)
     b, ln_a = np.polyfit(x_data, np.log(y_data), 1)
-    a = np.exp(ln_a) # Recover the original amplitude coefficient
+    a = np.exp(ln_a)
+    
+    # Predict values on the original scale to compute the correct physical residuals
+    y_pred = a * np.exp(b * x_data)
 
-    # Generate coordinates along the exponential curve
+    # Calculate R² based on true physical deviations
+    ss_res = np.sum((y_data - y_pred) ** 2)
+    ss_tot = np.sum((y_data - np.mean(y_data)) ** 2)
+    r_squared = 1 - (ss_res / ss_tot) if ss_tot > 0 else 0
+
+    # Plot Exponential Curve
     x_trend = np.linspace(x_data.min(), x_data.max(), 100)
     y_trend = a * np.exp(b * x_trend)
-
-    # 4. Plot the Exponential Trendline
-    # An exponential decay will yield a negative 'b' value
-    trend_label = f'Exp Fit (y = {a:.2f} * e^({b:.4f}*x))'
+    trend_label = f'Exp Fit (y={a:.2f}*e^({b:.4f}x), R²={r_squared:.4f})'
     plt.plot(x_trend, y_trend, linestyle='--', color='black', linewidth=1.5, label=trend_label)
 
-    # 5. Formatting
+    # Formatting
     plt.title(title, fontsize=14, fontweight='bold')
     plt.xlabel(x_label, fontsize=12)
     plt.ylabel(y_label, fontsize=12)
     plt.grid(True, linestyle='--', alpha=0.7)
     plt.legend(loc='best')
     plt.tight_layout()
-    
     plt.savefig(output_path, dpi=300)
     plt.close()
+
