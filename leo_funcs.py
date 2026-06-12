@@ -863,3 +863,28 @@ def create_plot_expd(df, x_col, y_col, title, x_label, y_label, output_path, col
     plt.savefig(output_path, dpi=300)
     plt.close()
 
+def calculate_aabb_volume_xz(points, x_range, z_range):
+    """
+    Filters a pre-loaded numpy point array by an X-Z area and calculates 
+    the AABB volume and point count. The Y-axis acts as the height.
+    """
+    # 1. Isolate the points within the defined X-Z plane
+    # points[:, 0] is the X-axis
+    # points[:, 2] is the Z-axis
+    mask_x = (points[:, 0] >= x_range[0]) & (points[:, 0] <= x_range[1])
+    mask_z = (points[:, 2] >= z_range[0]) & (points[:, 2] <= z_range[1])
+    
+    filtered_points = points[mask_x & mask_z]
+    
+    if len(filtered_points) == 0:
+        return 0.0, 0
+        
+    # 2. Find the absolute boundaries (This automatically finds the highest/lowest Y)
+    min_bounds = np.min(filtered_points, axis=0)
+    max_bounds = np.max(filtered_points, axis=0)
+    
+    # 3. Calculate volume (X_length * Y_height * Z_width)
+    dimensions = max_bounds - min_bounds
+    volume = dimensions[0] * dimensions[1] * dimensions[2]
+    
+    return volume, len(filtered_points)

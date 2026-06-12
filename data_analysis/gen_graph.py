@@ -154,7 +154,7 @@ def main():
                     os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgPointsPerSnapshot.png'), color='tab:pink')
         
         #Plot 8 Time vs Average Points Per Time
-        create_plot_tl(df_avg, 'Time_s', 'Average Points Per Time',
+        create_plot_expd(df_avg, 'Time_s', 'Average Points Per Time',
                     'Global Metric: Average Points Per Time vs Time',
                     'Time_s', 'Average Points Per Time',
                     os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgPointsPerTime.png'), color='tab:cyan')

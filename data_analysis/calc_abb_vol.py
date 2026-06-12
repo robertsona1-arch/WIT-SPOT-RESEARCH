@@ -82,7 +82,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import calculate_aabb_volume, parse_alignment_log
+from leo_funcs import calculate_aabb_volume, parse_alignment_log, calculate_aabb_volume_xz
 
 def main():
     parser = argparse.ArgumentParser(description="Batch process AABB volumes to Excel using local config.")
@@ -135,11 +135,29 @@ def main():
         # Grab the alignment metrics for this specific test run (default to None if missing)
         test_metrics = log_metrics.get(a, {'Time_s': None, 'Dist_Error_m': None, 'Yaw_Error_deg': None})
 
-        for area_name, bounds in areas.items():
+        """for area_name, bounds in areas.items(): #use for xy
             x_range = bounds["x_range"]
             y_range = bounds["y_range"]
             
             volume, point_count = calculate_aabb_volume(points, x_range, y_range)
+            
+            results_data.append({
+                'Snap_Count': a,
+                'Time_s': test_metrics['Time_s'],
+                'Area_Name': area_name,
+                'Point_Count': point_count,
+                'Volume_m3': round(volume, 6),
+                'Dist_Error_m': test_metrics['Dist_Error_m'],
+                'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
+            })"""
+        
+        for area_name, bounds in areas.items(): #use for xz
+            x_range = bounds["x_range"]
+            # Target the new Z-range key from your updated JSON configs
+            z_range = bounds["z_range"] 
+            
+            # Call the newly defined XZ calculation function
+            volume, point_count = calculate_aabb_volume_xz(points, x_range, z_range)
             
             results_data.append({
                 'Snap_Count': a,
