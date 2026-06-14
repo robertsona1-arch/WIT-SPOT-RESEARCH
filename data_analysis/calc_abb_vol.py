@@ -87,6 +87,7 @@ from leo_funcs import calculate_aabb_volume, parse_alignment_log, calculate_aabb
 def main():
     parser = argparse.ArgumentParser(description="Batch process AABB volumes to Excel using local config.")
     parser.add_argument('--folder', required=True, help='Root directory containing test subfolders and JSON config')
+    parser.add_argument('--axis', required=True, choices=['xy', 'xz'], help='Axis combination to calculate volume for')
     
     options = parser.parse_args()
 
@@ -135,39 +136,40 @@ def main():
         # Grab the alignment metrics for this specific test run (default to None if missing)
         test_metrics = log_metrics.get(a, {'Time_s': None, 'Dist_Error_m': None, 'Yaw_Error_deg': None})
 
-        """for area_name, bounds in areas.items(): #use for xy
-            x_range = bounds["x_range"]
-            y_range = bounds["y_range"]
-            
-            volume, point_count = calculate_aabb_volume(points, x_range, y_range)
-            
-            results_data.append({
-                'Snap_Count': a,
-                'Time_s': test_metrics['Time_s'],
-                'Area_Name': area_name,
-                'Point_Count': point_count,
-                'Volume_m3': round(volume, 6),
-                'Dist_Error_m': test_metrics['Dist_Error_m'],
-                'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
-            })"""
-        
-        for area_name, bounds in areas.items(): #use for xz
-            x_range = bounds["x_range"]
-            # Target the new Z-range key from your updated JSON configs
-            z_range = bounds["z_range"] 
-            
-            # Call the newly defined XZ calculation function
-            volume, point_count = calculate_aabb_volume_xz(points, x_range, z_range)
-            
-            results_data.append({
-                'Snap_Count': a,
-                'Time_s': test_metrics['Time_s'],
-                'Area_Name': area_name,
-                'Point_Count': point_count,
-                'Volume_m3': round(volume, 6),
-                'Dist_Error_m': test_metrics['Dist_Error_m'],
-                'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
-            })
+        if options.axis == 'xy':
+            for area_name, bounds in areas.items(): #use for xy
+                x_range = bounds["x_range"]
+                y_range = bounds["y_range"]
+                
+                volume, point_count = calculate_aabb_volume(points, x_range, y_range)
+                
+                results_data.append({
+                    'Snap_Count': a,
+                    'Time_s': test_metrics['Time_s'],
+                    'Area_Name': area_name,
+                    'Point_Count': point_count,
+                    'Volume_m3': round(volume, 6),
+                    'Dist_Error_m': test_metrics['Dist_Error_m'],
+                    'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
+                })
+        else:
+            for area_name, bounds in areas.items(): #use for xz
+                x_range = bounds["x_range"]
+                # Target the new Z-range key from your updated JSON configs
+                z_range = bounds["z_range"] 
+                
+                # Call the newly defined XZ calculation function
+                volume, point_count = calculate_aabb_volume_xz(points, x_range, z_range)
+                
+                results_data.append({
+                    'Snap_Count': a,
+                    'Time_s': test_metrics['Time_s'],
+                    'Area_Name': area_name,
+                    'Point_Count': point_count,
+                    'Volume_m3': round(volume, 6),
+                    'Dist_Error_m': test_metrics['Dist_Error_m'],
+                    'Yaw_Error_deg': test_metrics['Yaw_Error_deg']
+                })
 
     if not results_data:
         print("No data processed. Exiting.")
@@ -206,7 +208,9 @@ def main():
     }).reset_index()
 
     # 4. EXCEL MULTI-TAB EXPORT PIPELINE
-    excel_output_path = os.path.join(options.folder, 'volume_analysis_by_area.xlsx')
+    fold_name=os.path.basename(os.path.normpath(options.folder))
+    fold_name=fold_name.replace(" ", "")
+    excel_output_path = os.path.join(options.folder, f'vabb_{fold_name}.xlsx')
     print(f"\nExporting structured sheets to: {excel_output_path}\n")
     
     with pandas.ExcelWriter(excel_output_path, engine='openpyxl') as writer:

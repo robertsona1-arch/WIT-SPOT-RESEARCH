@@ -888,3 +888,90 @@ def calculate_aabb_volume_xz(points, x_range, z_range):
     volume = dimensions[0] * dimensions[1] * dimensions[2]
     
     return volume, len(filtered_points)
+
+def analyze_and_plot(df, x_col, y_col, title, x_label, y_label, output_path, sheet_name, color='tab:blue'):
+    """Calculates both linear and exponential models, plots them, and returns the metrics for Excel export."""
+    plt.figure(figsize=(10, 6))
+    extracted_metrics = []
+
+    # 1. Clean data for Linear Regression
+    clean_df = df[[x_col, y_col]].dropna()
+    clean_df = clean_df[np.isfinite(clean_df[x_col]) & np.isfinite(clean_df[y_col])]
+    
+    if len(clean_df) < 2:
+        plt.close()
+        return extracted_metrics
+
+    x_data = clean_df[x_col].to_numpy()
+    y_data = clean_df[y_col].to_numpy()
+
+    # Plot Raw Data
+    seaborn.lineplot(data=df, x=x_col, y=y_col, marker='o', linewidth=2, color=color, label='Raw Data')
+
+    # ---------------------------------------------------------
+    # 2. LINEAR REGRESSION (y = mx + b)
+    # ---------------------------------------------------------
+    slope, intercept = np.polyfit(x_data, y_data, 1)
+    y_pred_lin = slope * x_data + intercept
+    
+    ss_res_lin = np.sum((y_data - y_pred_lin) ** 2)
+    ss_tot_lin = np.sum((y_data - np.mean(y_data)) ** 2)
+    r2_lin = 1 - (ss_res_lin / ss_tot_lin) if ss_tot_lin > 0 else 0
+
+    x_trend = np.linspace(x_data.min(), x_data.max(), 100)
+    plt.plot(x_trend, slope * x_trend + intercept, linestyle='--', color='black', linewidth=1.5, 
+             label=f'Linear Fit (R²={r2_lin:.4f})')
+
+    extracted_metrics.append({
+        'Sheet_Source': sheet_name,
+        'X_Axis': x_col,
+        'Y_Axis': y_col,
+        'Model_Type': 'Linear',
+        'Equation': f"y = {slope:.6f}x + {intercept:.6f}",
+        'R_Squared': round(r2_lin, 4),
+        'Param_1_(Slope_or_Decay)': round(slope, 6),
+        'Param_2_(Intercept_or_Amp)': round(intercept, 6)
+    })
+
+    # ---------------------------------------------------------
+    # 3. EXPONENTIAL DECAY (y = a * e^(bx))
+    # ---------------------------------------------------------
+    # Exponential models mathematically fail if Y values are <= 0. Filter them strictly.
+    exp_mask = y_data > 0
+    if np.sum(exp_mask) >= 2:
+        x_exp = x_data[exp_mask]
+        y_exp = y_data[exp_mask]
+        
+        b, ln_a = np.polyfit(x_exp, np.log(y_exp), 1)
+        a = np.exp(ln_a)
+        
+        y_pred_exp = a * np.exp(b * x_exp)
+        ss_res_exp = np.sum((y_exp - y_pred_exp) ** 2)
+        ss_tot_exp = np.sum((y_exp - np.mean(y_exp)) ** 2)
+        r2_exp = 1 - (ss_res_exp / ss_tot_exp) if ss_tot_exp > 0 else 0
+
+        plt.plot(x_trend, a * np.exp(b * x_trend), linestyle=':', color='tab:red', linewidth=2, 
+                 label=f'Exp Fit (R²={r2_exp:.4f})')
+
+        extracted_metrics.append({
+            'Sheet_Source': sheet_name,
+            'X_Axis': x_col,
+            'Y_Axis': y_col,
+            'Model_Type': 'Exponential',
+            'Equation': f"y = {a:.6f} * e^({b:.6f}x)",
+            'R_Squared': round(r2_exp, 4),
+            'Param_1_(Slope_or_Decay)': round(b, 6),
+            'Param_2_(Intercept_or_Amp)': round(a, 6)
+        })
+
+    # 4. Chart Output Formatting
+    plt.title(title, fontsize=14, fontweight='bold')
+    plt.xlabel(x_label, fontsize=12)
+    plt.ylabel(y_label, fontsize=12)
+    plt.grid(True, linestyle='--', alpha=0.7)
+    plt.legend(loc='best')
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=300)
+    plt.close()
+
+    return extracted_metrics
