@@ -61,20 +61,43 @@ from leo_funcs import calculate_aabb_volume, parse_alignment_log, calculate_aabb
 def main():
     parser = argparse.ArgumentParser(description="Generate plots and export regression math to Excel.")
     parser.add_argument('--folder', required=True, help='Directory containing the target Excel file.')
-    parser.add_argument('--file', default='volume_analysis_by_area.xlsx', help='Specific Excel file to parse and append to.')
-    options = parser.parse_args()
 
-    excel_path = os.path.join(options.folder, options.file)
+    options = parser.parse_args()
+    
+    # Extract the folder name and clean the spaces (e.g., "4-8 V1" -> "4-8V1")
+    folder_name = os.path.basename(os.path.normpath(options.folder))
+    clean_folder_suffix = folder_name.replace(" ", "")
+    
+    # Dynamically generate the expected filename based on the input directory
+    default_excel_name = f"vabb_{clean_folder_suffix}.xlsx"
+
+    excel_path = os.path.join(options.folder, default_excel_name)
+
     if not os.path.exists(excel_path):
         print(f"Error: Cannot find target Excel file at {excel_path}")
         return
 
-    graphs_dir = os.path.join(options.folder, 'analysis_graphs')
+    # Apply the exact same naming scheme to the output directory
+    graphs_dir = os.path.join(options.folder, f"analysis_graphs_{clean_folder_suffix}")
     os.makedirs(graphs_dir, exist_ok=True)
     seaborn.set_theme(style="whitegrid")
+
+    # Absolute normalized path to eliminate relative quirks
+    norm_path = os.path.normpath(options.folder)
+
+    # Extract "6-10 C1" -> Clean to "6-10C1"
+    run_name = os.path.basename(norm_path)
+    run_suffix = run_name.replace(" ", "")
+
+    # Extract the parent directory: "/path/to/closer" -> returns "closer"
+    parent_dir_path = os.path.dirname(norm_path)
+    test_type = os.path.basename(parent_dir_path) 
+
+    # Combine them for clear names (e.g., "closer_6-10C1")
+    test_namespace = f"{test_type}_{run_suffix}"
     
     # We load all tabs into a dictionary of DataFrames to parse them
-    all_sheets = pandas.read_excel(excel_path, sheet_name=None)
+    excel_file = pandas.read_excel(excel_path, sheet_name=None)
     global_metrics_list = []
     
     print(f"Generating charts and extracting regression algorithms...\n")
@@ -82,71 +105,113 @@ def main():
     # =========================================================================
     # GENERATE GRAPHS AND CAPTURE MATH
     # =========================================================================
-    if 'Averages_Dashboard' in all_sheets:
-        df_avg = all_sheets['Averages_Dashboard']
+    if 'Averages_Dashboard' in excel_file:
+        df_avg = excel_file['Averages_Dashboard']
         print("Parsing [Averages_Dashboard] tab...")
         
-        global_metrics_list.extend(analyze_and_plot(df_avg, 'Snap_Count', 'Average Point Count', 
-                    'Global: Average Point Count vs Snap Count', 'Snap Count', 'Average Point Count', 
-                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgPointCount.png'), 'Averages_Dashboard', color='tab:blue'))
+        global_metrics_list.extend(
+            analyze_and_plot(
+                df_avg, 
+                'Snap_Count', 
+                'Average Point Count', 
+                f'{test_type.capitalize()} ({run_name}): Average Point Count vs Snap Count',  # Dynamic Title
+                'Snap Count', 
+                'Average Point Count', 
+                os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Snap_vs_AvgPointCount.png'),  # Dynamic Filename
+                'Averages_Dashboard', 
+                color='tab:blue'
+            )
+        )
 
+        # Plot 2: Snap_Count vs Average Density
         global_metrics_list.extend(analyze_and_plot(df_avg, 'Snap_Count', 'Average Density', 
-                    'Global: Average Density vs Snap Count', 'Snap Count', 'Average Density (Pts/m³)', 
-                    os.path.join(graphs_dir, 'Dashboard_Snap_vs_AvgDensity.png'), 'Averages_Dashboard', color='tab:orange'))
+                    f'{test_type.capitalize()} ({run_name}): Average Density vs Snap Count', 
+                    'Snap Count', 'Average Density (Pts/m³)', 
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Snap_vs_AvgDensity.png'), 'Averages_Dashboard', color='tab:orange'))
 
+        # Plot 3: Time_s vs Average Point Count
         global_metrics_list.extend(analyze_and_plot(df_avg, 'Time_s', 'Average Point Count', 
-                    'Global: Average Point Count vs Total Time', 'Time_s', 'Average Point Count', 
-                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgPointCount.png'), 'Averages_Dashboard', color='tab:green'))
+                    f'{test_type.capitalize()} ({run_name}): Average Point Count vs Total Time', 
+                    'Time_s', 'Average Point Count', 
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Time_vs_AvgPointCount.png'), 'Averages_Dashboard', color='tab:green'))
 
+        # Plot 4: Time_s vs Average Density
         global_metrics_list.extend(analyze_and_plot(df_avg, 'Time_s', 'Average Density', 
-                    'Global: Average Density vs Total Time', 'Time_s', 'Average Density (Pts/m³)', 
-                    os.path.join(graphs_dir, 'Dashboard_Time_vs_AvgDensity.png'), 'Averages_Dashboard', color='tab:red'))
+                    f'{test_type.capitalize()} ({run_name}): Average Density vs Total Time', 
+                    'Time_s', 'Average Density (Pts/m³)', 
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Time_vs_AvgDensity.png'), 'Averages_Dashboard', color='tab:red'))
 
-    area_sheets = [s for s in all_sheets.keys() if s not in ['Master_Data', 'Averages_Dashboard', 'Regression_Metrics']]
+        # Plot 5: Time_s vs Snap_Count
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Time_s', 'Snap_Count',
+                    f'{test_type.capitalize()} ({run_name}): Snap Count Evolution vs Total Time',
+                    'Time_s', 'Snap Count',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Time_vs_SnapCount.png'), 'Averages_Dashboard', color='tab:purple'))
+
+        # Plot 6: Average Point Count vs Average Density
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Average Point Count', 'Average Density',
+                    f'{test_type.capitalize()} ({run_name}): Average Density vs Average Point Count',
+                    'Average Point Count', 'Average Density (Pts/m³)',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_AvgPointCount_vs_AvgDensity.png'), 'Averages_Dashboard', color='tab:brown'))
+        
+        # Plot 7: Snap Count vs Average Points Per Snapshot
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Snap_Count', 'Average Points Per Snapshot',
+                    f'{test_type.capitalize()} ({run_name}): Average Points Per Snapshot vs Snap Count',
+                    'Snap Count', 'Average Points Per Snapshot',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Snap_vs_AvgPointsPerSnapshot.png'), 'Averages_Dashboard', color='tab:brown'))
+        
+        # Plot 8: Time vs Average Points Per Time
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Time_s', 'Average Points Per Time',
+                    f'{test_type.capitalize()} ({run_name}): Average Points Per Time vs Time',
+                    'Time_s', 'Average Points Per Time',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Time_vs_AvgPointsPerTime.png'), 'Averages_Dashboard', color='tab:cyan'))
+        
+        # Plot 9: Time vs Average Density Per Time
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Time_s', 'Average Density Per Time',
+                    f'{test_type.capitalize()} ({run_name}): Average Density Per Time vs Time',
+                    'Time_s', 'Average Density Per Time',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Time_vs_AvgDensityPerTime.png'), 'Averages_Dashboard', color='tab:gray'))
+        
+        # Plot 10: Snap Count vs Average Density Per Snapshot
+        global_metrics_list.extend(analyze_and_plot(df_avg, 'Snap_Count', 'Average Density Per Snapshot',
+                    f'{test_type.capitalize()} ({run_name}): Average Density Per Snapshot vs Snap Count',
+                    'Snap Count', 'Average Density Per Snapshot',
+                    os.path.join(graphs_dir, f'{test_namespace}_Dashboard_Snap_vs_AvgDensityPerSnapshot.png'), 'Averages_Dashboard', color='tab:olive'))
+
+    # =========================================================================
+    # 2. GRAPH GENERATION: INDIVIDUAL ISOLATED AREAS
+    # =========================================================================
+    # Isolate only the area specific sheets by filtering out the master and summary ledgers
+    area_sheets = [s for s in excel_file.keys() if s not in ['Master_Data', 'Averages_Dashboard','Regression_Metrics']]
     
     for area in area_sheets:
-        df_area = all_sheets[area]
         print(f"Parsing [{area}] tab...")
+        df_area = excel_file[area]
         
-        global_metrics_list.extend(analyze_and_plot(df_area, 'Snap_Count', 'Point_Count', 
-                    f'{area}: Point Count vs Snap Count', 'Snap Count', 'Point Count', 
-                    os.path.join(graphs_dir, f'{area}_Snap_vs_PointCount.png'), area, color='tab:blue'))
+        # Plot 1: Snap_Count vs Point_Count
+        analyze_and_plot(df_area, 'Snap_Count', 'Point_Count', 
+                    f'{test_type.capitalize()} ({run_name}) - {area}: Point Count vs Snap Count', 
+                    'Snap Count', 'Point Count', 
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_PointCount.png'),area, color='tab:blue')
 
-        global_metrics_list.extend(analyze_and_plot(df_area, 'Snap_Count', 'Density: Pts Per m3', 
-                    f'{area}: Density vs Snap Count', 'Snap Count', 'Density: Pts Per m3', 
-                    os.path.join(graphs_dir, f'{area}_Snap_vs_Density.png'), area, color='tab:orange'))
+        # Plot 2: Snap_Count vs Density: Pts Per m3
+        analyze_and_plot(df_area, 'Snap_Count', 'Density: Pts Per m3', 
+                    f'{test_type.capitalize()} ({run_name}) - {area}: Spatial Density vs Snap Count', 
+                    'Snap Count', 'Density: Pts Per m3', 
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_Density.png'), area, color='tab:orange')
 
-        global_metrics_list.extend(analyze_and_plot(df_area, 'Time_s', 'Point_Count', 
-                    f'{area}: Point Count vs Total Time', 'Time_s', 'Point Count', 
-                    os.path.join(graphs_dir, f'{area}_Time_vs_PointCount.png'), area, color='tab:green'))
+        # Plot 3: Time_s vs Point_Count
+        analyze_and_plot(df_area, 'Time_s', 'Point_Count', 
+                    f'{test_type.capitalize()} ({run_name}) - {area}: Point Count vs Total Time', 
+                    'Time_s', 'Point Count', 
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_PointCount.png'), area, color='tab:green')
 
-        global_metrics_list.extend(analyze_and_plot(df_area, 'Time_s', 'Density: Pts Per m3', 
-                    f'{area}: Density vs Total Time', 'Time_s', 'Density: Pts Per m3', 
-                    os.path.join(graphs_dir, f'{area}_Time_vs_Density.png'), area, color='tab:red'))
-
-        global_metrics_list.extend(analyze_and_plot(df_area, 'Time_s', 'Snap_Count', 
-                    f'{area}: Snap Count vs Total Time', 'Time_s', 'Snap Count', 
-                    os.path.join(graphs_dir, f'{area}_Time_vs_SnapCount.png'), area, color='tab:purple'))
-
-    # =========================================================================
-    # EXPORT METRICS BACK TO THE ORIGINAL EXCEL WORKBOOK
-    # =========================================================================
-    print(f"\nAppending Regression Math back into: {options.file}")
-    
-    df_metrics = pandas.DataFrame(global_metrics_list)
-    
-    # We use mode='a' (append) and if_sheet_exists='replace' to overwrite just this single tab without deleting your others
-    with pandas.ExcelWriter(excel_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-        df_metrics.to_excel(writer, sheet_name='Regression_Metrics', index=False)
+        # Plot 4: Time_s vs Density: Pts Per m3
+        analyze_and_plot(df_area, 'Time_s', 'Density: Pts Per m3', 
+                    f'{test_type.capitalize()} ({run_name}) - {area}: Spatial Density vs Total Time', 
+                    'Time_s', 'Density: Pts Per m3', 
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_Density.png'), area, color='tab:red')
         
-        # Apply Auto-Fit Formatting to the new tab
-        worksheet = writer.sheets['Regression_Metrics']
-        for col in worksheet.columns:
-            max_len = max(len(str(cell.value or '')) for cell in col)
-            col_letter = get_column_letter(col[0].column)
-            worksheet.column_dimensions[col_letter].width = max(max_len + 3, 15)
-
-    print("\nComplete. Check the [Regression_Metrics] tab in your Excel file.")
+    print(f"\nExecution complete. All 34 plots output directly to: {graphs_dir}")
 
 if __name__ == "__main__":
     main()
