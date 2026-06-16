@@ -177,6 +177,7 @@ def main():
 
     # 3. DataFrame Math & Export
     df_master = pandas.DataFrame(results_data) #column gets renamed to just 'Time_s' 
+    df_master = df_master[df_master['Area_Name'] != 'Front_lf_box'].reset_index(drop=True)
     
     # --- PIPELINE MATH EXAMPLE ---
     # Pandas handles array math automatically. This prevents you from having to drag formulas in Excel.

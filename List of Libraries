@@ -27,6 +27,8 @@ import matplotlib.pyplot as plt
 import openpyxl
 from openpyxl.utils import get_column_letter
 from pathlib import Path
+from scipy.optimize import curve_fit
+import warnings
 
 #bd specific imports
 import google.protobuf.timestamp_pb2

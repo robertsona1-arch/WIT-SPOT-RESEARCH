@@ -44,6 +44,9 @@ import re
 import seaborn
 import matplotlib.pyplot as plt
 import openpyxl
+from openpyxl.utils import get_column_letter
+from pathlib import Path
+from scipy.optimize import curve_fit
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -71,11 +74,14 @@ from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import math_helpers
 from bosdyn.client.math_helpers import SE2Pose
 from bosdyn.client.world_object import WorldObjectClient
+from bosdyn.client.image import ImageClient, save_images_as_files
 
 #google imports
 import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
+
+
 
 def check_batt_perc(robot_state_client,limit=20.0):
     """
@@ -975,3 +981,121 @@ def analyze_and_plot(df, x_col, y_col, title, x_label, y_label, output_path, she
     plt.close()
 
     return extracted_metrics
+
+def calculate_regressions(df, x_col, y_col, obj_name):
+    """Calculates Linear and Exponential regressions for a given data subset."""
+    results = []
+    
+    # Drop NaNs or zeros to prevent log errors
+    valid_data = df.dropna(subset=[x_col, y_col])
+    x = valid_data[x_col].values
+    y = valid_data[y_col].values
+    
+    if len(x) < 2:
+        return results
+
+    # 1. Linear Regression (y = mx + b)
+    m, b = np.polyfit(x, y, 1)
+    y_pred_lin = m * x + b
+    # Calculate R-Squared
+    ss_res_lin = np.sum((y - y_pred_lin)**2)
+    ss_tot_lin = np.sum((y - np.mean(y))**2)
+    r2_lin = 1 - (ss_res_lin / ss_tot_lin) if ss_tot_lin != 0 else 0
+    
+    results.append({
+        'Sheet_Source': obj_name,
+        'X_Axis': x_col,
+        'Y_Axis': y_col,
+        'Model_Type': 'Linear',
+        'Equation': f"y = {m:.6f}x + {b:.6f}",
+        'R_Squared': round(r2_lin, 4),
+        'Param_1_(Slope_or_Decay)': m,
+        'Param_2_(Intercept_or_Amp)': b
+    })
+
+    # 2. Exponential Regression (y = A * e^(bx))
+    # Filter for strictly positive y values for log transformation
+    pos_mask = y > 0
+    if np.sum(pos_mask) >= 2:
+        x_pos, y_pos = x[pos_mask], y[pos_mask]
+        try:
+            decay, log_A = np.polyfit(x_pos, np.log(y_pos), 1)
+            A = np.exp(log_A)
+            y_pred_exp = A * np.exp(decay * x_pos)
+            
+            ss_res_exp = np.sum((y_pos - y_pred_exp)**2)
+            ss_tot_exp = np.sum((y_pos - np.mean(y_pos))**2)
+            r2_exp = 1 - (ss_res_exp / ss_tot_exp) if ss_tot_exp != 0 else 0
+            
+            results.append({
+                'Sheet_Source': obj_name,
+                'X_Axis': x_col,
+                'Y_Axis': y_col,
+                'Model_Type': 'Exponential',
+                'Equation': f"y = {A:.6f} * e^({decay:.6f}x)",
+                'R_Squared': round(r2_exp, 4),
+                'Param_1_(Slope_or_Decay)': decay,
+                'Param_2_(Intercept_or_Amp)': A
+            })
+        except Exception:
+            pass # Skip if exponential fitting mathematically fails
+
+    return results
+
+def linear(x, m, b):
+    return m * x + b
+
+def exponential(x, a, b):
+    return a * np.exp(b * x)
+
+def power_law(x, a, b):
+    return a * (x ** b)
+
+def calculate_best_fit(x, y, is_bivariate=False):
+    """Evaluates regressions using scaled features to prevent numeric oscillations."""
+    mask = np.isfinite(x) & np.isfinite(y)
+    x_clean = np.array(x[mask], dtype=float)
+    y_clean = np.array(y[mask], dtype=float)
+    
+    if len(x_clean) < 2: return None, None, "", 0, None, None
+    ss_tot = np.sum((y_clean - np.mean(y_clean)) ** 2)
+    if ss_tot == 0: return None, None, "", 0, None, None
+
+    x_min, x_max = x_clean.min(), x_clean.max()
+    if x_max == x_min: return None, None, "", 0, None, None
+    x_scaled = (x_clean - x_min) / (x_max - x_min)
+
+    if is_bivariate:
+        try:
+            coefs = np.polyfit(x_scaled, y_clean, 2)
+            y_pred = np.polyval(coefs, x_scaled)
+            r2 = 1 - (np.sum((y_clean - y_pred) ** 2) / ss_tot)
+            return None, coefs, "2nd-Order Polynomial", r2, x_min, x_max
+        except: return None, None, "", 0, None, None
+
+    best_r2 = -float('inf')
+    best_func, best_params, best_name = None, None, ""
+
+    # Linear Fit
+    try:
+        popt_lin, _ = curve_fit(linear, x_clean, y_clean)
+        r2 = 1 - (np.sum((y_clean - linear(x_clean, *popt_lin)) ** 2) / ss_tot)
+        if r2 > best_r2: best_r2, best_func, best_params, best_name = r2, linear, popt_lin, "Linear"
+    except: pass
+
+    # Exponential Fit
+    try:
+        popt_exp, _ = curve_fit(exponential, x_scaled, y_clean, p0=(y_clean[0], -0.1), maxfev=5000)
+        r2 = 1 - (np.sum((y_clean - exponential(x_scaled, *popt_exp)) ** 2) / ss_tot)
+        if r2 > best_r2: best_r2, best_func, best_params, best_name = r2, exponential, popt_exp, "Exponential"
+    except: pass
+
+    # Power Law Fit
+    try:
+        x_shifted = x_scaled + 0.01
+        popt_pow, _ = curve_fit(power_law, x_shifted, y_clean, p0=(y_clean[0], -1.0), maxfev=5000)
+        r2 = 1 - (np.sum((y_clean - power_law(x_shifted, *popt_pow)) ** 2) / ss_tot)
+        if r2 > best_r2: best_r2, best_func, best_params, best_name = r2, power_law, popt_pow, "Power Law"
+    except: pass
+
+    return best_func, best_params, best_name, best_r2, x_min, x_max

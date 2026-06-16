@@ -65,44 +65,32 @@ from leo_funcs import *
 warnings.simplefilter('ignore', np.RankWarning)
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate comprehensive plots and regression metrics.")
+    parser = argparse.ArgumentParser(description="Plot Mean, STD, and the single highest-performing regression line.")
     parser.add_argument('--file', required=True, help="Path to the Total_Averages_Group_X.xlsx file")
     args = parser.parse_args()
 
     file_path = Path(args.file)
     if not file_path.exists():
-        print(f"[ERROR] {file_path} not found.")
+        print(f"[ERROR] file {file_path} not found.")
         return
 
-    # 1. Load Data (Excluding dashboards and master sheets)
+    # Ingest individual object tabs to compute the true variance
     xls = pandas.ExcelFile(file_path)
     sheets_to_ignore = ['Averages_Dashboard', 'Regression_Metrics', 'Master_Data']
     
     all_data = []
-    object_names = []
-    
     for sheet in xls.sheet_names:
         if sheet in sheets_to_ignore:
             continue
         df = pandas.read_excel(xls, sheet_name=sheet)
-        df['Object'] = sheet
         all_data.append(df)
-        object_names.append(sheet)
-        
+
     if not all_data:
-        print("[ERROR] No valid object sheets found in file.")
+        print("[ERROR] No valid object data parsed.")
         return
 
     combined_df = pandas.concat(all_data, ignore_index=True)
 
-    # 2. Compute the exact Global Average
-    global_avg = combined_df.groupby(['Snap_Count', 'Time_s']).mean(numeric_only=True).reset_index()
-    global_avg['Object'] = 'Global Average'
-
-    # Combine objects and average for plotting/regression
-    final_df = pandas.concat([combined_df, global_avg], ignore_index=True)
-
-    # 3. Define the 10 Target Metric Pairs
     metric_pairs = [
         ('Snap_Count', 'Point_Count', 'Snap Count vs Point Count'),
         ('Snap_Count', 'Density: Pts Per m3', 'Snap Count vs Density'),
@@ -116,80 +104,61 @@ def main():
         ('Snap_Count', 'Density Per Snapshot', 'Snap Count vs Density per Snapshot')
     ]
 
-    # 4. Generate Regressions
-    print("Calculating Linear and Exponential Regressions...")
-    regression_records = []
-    unique_objects = final_df['Object'].unique()
-    
-    for obj in unique_objects:
-        obj_df = final_df[final_df['Object'] == obj]
-        for x_col, y_col, _ in metric_pairs:
-            # Skip if columns are missing
-            if x_col not in obj_df.columns or y_col not in obj_df.columns:
-                continue
-            records = calculate_regressions(obj_df, x_col, y_col, obj)
-            regression_records.extend(records)
+    output_dir = file_path.parent / f"Best_Fit_Analysis_{file_path.stem}"
+    output_dir.mkdir(exist_ok=True)
+    print(f"Plotting high-DPI figures to {output_dir.name}/ ...")
 
-    # 5. Write Regressions to Excel
-    regression_df = pandas.DataFrame(regression_records)
-    print(f"Injecting {len(regression_df)} regression formulas into {file_path.name}...")
-    with pandas.ExcelWriter(file_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
-        regression_df.to_excel(writer, sheet_name='Regression_Metrics', index=False)
-
-    # 6. Plotting Execution (Generates 10 isolated high-res files)
-    print("Rendering 10 analytical plots...")
-    plot_dir = file_path.parent / f"Plots_{file_path.stem}"
-    plot_dir.mkdir(exist_ok=True)
-
-    seaborn.set_theme(context="paper", style="whitegrid", font_scale=1.2)
-    palette = seaborn.color_palette("husl", len(object_names))
-    color_dict = {obj: color for obj, color in zip(object_names, palette)}
-    color_dict['Global Average'] = 'black'
-    
-    style_dict = {obj: "" for obj in object_names}
-    style_dict['Global Average'] = (2, 2)
+    # Establish clean journal styling
+    plt.style.use('seaborn-v0_8-whitegrid')
+    plt.rcParams.update({'font.size': 12, 'axes.labelweight': 'bold', 'legend.frameon': True})
 
     for idx, (x_col, y_col, title) in enumerate(metric_pairs, 1):
-        if x_col not in final_df.columns or y_col not in final_df.columns:
-            print(f"  [SKIP] Missing data for {title}")
+        if x_col not in combined_df.columns or y_col not in combined_df.columns:
             continue
 
-        # Group by the X-axis variable to calculate the Mean and STD for the Y-axis variable
+        # Group data points by X to isolate discrete mean and variance
         agg_df = combined_df.groupby(x_col)[y_col].agg(['mean', 'std']).reset_index()
-        # Fill NaN standard deviations with 0 (occurs if only 1 data point exists for an X value)
         agg_df['std'] = agg_df['std'].fillna(0)
 
-        fig, ax1 = plt.subplots(figsize=(9, 6))
+        x_data = agg_df[x_col]
+        y_mean = agg_df['mean']
+        y_std = agg_df['std']
 
-        # Primary Axis (Left) - The Mean
-        color_mean = '#1f77b4' # Standard Matplotlib Blue
-        ax1.set_xlabel(x_col.replace('_', ' '), weight='bold')
-        ax1.set_ylabel(f"Mean: {y_col.replace('_', ' ')}", color=color_mean, weight='bold')
-        line1 = ax1.plot(agg_df[x_col], agg_df['mean'], color=color_mean, marker='o', linewidth=2.5, label='Global Average')
-        ax1.tick_params(axis='y', labelcolor=color_mean)
+        fig, ax = plt.subplots(figsize=(9, 6))
 
-        # Secondary Axis (Right) - The Standard Deviation
-        ax2 = ax1.twinx()  
-        color_std = '#d62728' # Standard Matplotlib Red
-        ax2.set_ylabel(f"STD: {y_col.replace('_', ' ')}", color=color_std, weight='bold')
-        # Use dashed line for STD to differentiate from the primary metric
-        line2 = ax2.plot(agg_df[x_col], agg_df['std'], color=color_std, marker='s', linestyle='--', linewidth=2, label='Standard Deviation')
-        ax2.tick_params(axis='y', labelcolor=color_std)
+        # Plot raw experimental data points with standard deviation error bars
+        ax.errorbar(
+            x_data, y_mean, yerr=y_std, 
+            fmt='o', color='black', ecolor='#888888', 
+            elinewidth=1.5, capsize=4, markersize=6, 
+            label='Global Mean ± 1 STD'
+        )
 
-        # Unified Legend
-        lines = line1 + line2
-        labels = [l.get_label() for l in lines]
-        ax1.legend(lines, labels, loc='upper left')
-
-        plt.title(f"{title} (Mean & Variance)", fontsize=14, weight='bold')
-        plt.tight_layout()
+        # Isolate the highest performing mathematical model
+        func, params, name, r2 = calculate_best_fit(x_data, y_mean)
         
+        if func is not None and r2 > 0:
+            # Generate smooth line array spanning the active range
+            x_smooth = np.linspace(x_data.min(), x_data.max(), 250)
+            y_smooth = func(x_smooth, *params)
+            
+            ax.plot(
+                x_smooth, y_smooth, 
+                linestyle='--', color='#d62728', linewidth=2, 
+                label=f"Best Fit: {name} ($R^2 = {r2:.3f}$)"
+            )
+
+        ax.set_title(title, fontsize=14, weight='bold', pad=12)
+        ax.set_xlabel(x_col.replace('_', ' '))
+        ax.set_ylabel(y_col.replace('_', ' '))
+        ax.legend(loc='best', shadow=True)
+        
+        plt.tight_layout()
         safe_title = title.replace(' ', '_')
-        img_path = plot_dir / f"Dual_{idx:02d}_{safe_title}.png"
-        plt.savefig(img_path, dpi=300)
+        plt.savefig(output_dir / f"BestFit_{idx:02d}_{safe_title}.png", dpi=300)
         plt.close()
 
-    print(f"[SUCCESS] All tasks complete. Check the 'Regression_Metrics' tab and the '{plot_dir.name}' folder.")
+    print(f"[SUCCESS] Exported 10 optimized plots to: {output_dir.absolute()}")
 
 if __name__ == "__main__":
     main()
