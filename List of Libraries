@@ -26,6 +26,7 @@ import seaborn
 import matplotlib.pyplot as plt
 import openpyxl
 from openpyxl.utils import get_column_letter
+from pathlib import Path
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -53,6 +54,7 @@ from bosdyn.client.robot_state import RobotStateClient
 from bosdyn.client import math_helpers
 from bosdyn.client.math_helpers import SE2Pose
 from bosdyn.client.world_object import WorldObjectClient
+from bosdyn.client.image import ImageClient, save_images_as_files
 
 #google imports
 import grpc

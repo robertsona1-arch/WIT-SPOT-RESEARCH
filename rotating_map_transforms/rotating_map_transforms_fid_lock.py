@@ -212,9 +212,6 @@ def main(argv):
                     #turn
                     turn_relative(command_client,robot_state_client,degPT)
                     time.sleep(3)
-                if a==options.end_n:
-                    turn_relative(command_client,robot_state_client,degPT)
-                    print("\nTurning so its at the start")
 
                 #stop and download
                 recording_client.stop_recording()

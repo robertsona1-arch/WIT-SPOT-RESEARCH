@@ -188,30 +188,62 @@ def main():
         df_area = excel_file[area]
         
         # Plot 1: Snap_Count vs Point_Count
-        analyze_and_plot(df_area, 'Snap_Count', 'Point_Count', 
+        global_metrics_list.extend(analyze_and_plot(df_area, 'Snap_Count', 'Point_Count', 
                     f'{test_type.capitalize()} ({run_name}) - {area}: Point Count vs Snap Count', 
                     'Snap Count', 'Point Count', 
-                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_PointCount.png'),area, color='tab:blue')
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_PointCount.png'), area, color='tab:blue'))
 
         # Plot 2: Snap_Count vs Density: Pts Per m3
-        analyze_and_plot(df_area, 'Snap_Count', 'Density: Pts Per m3', 
+        global_metrics_list.extend(analyze_and_plot(df_area, 'Snap_Count', 'Density: Pts Per m3', 
                     f'{test_type.capitalize()} ({run_name}) - {area}: Spatial Density vs Snap Count', 
                     'Snap Count', 'Density: Pts Per m3', 
-                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_Density.png'), area, color='tab:orange')
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Snap_vs_Density.png'), area, color='tab:orange'))
 
         # Plot 3: Time_s vs Point_Count
-        analyze_and_plot(df_area, 'Time_s', 'Point_Count', 
+        global_metrics_list.extend(analyze_and_plot(df_area, 'Time_s', 'Point_Count', 
                     f'{test_type.capitalize()} ({run_name}) - {area}: Point Count vs Total Time', 
                     'Time_s', 'Point Count', 
-                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_PointCount.png'), area, color='tab:green')
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_PointCount.png'), area, color='tab:green'))
 
         # Plot 4: Time_s vs Density: Pts Per m3
-        analyze_and_plot(df_area, 'Time_s', 'Density: Pts Per m3', 
+        global_metrics_list.extend(analyze_and_plot(df_area, 'Time_s', 'Density: Pts Per m3', 
                     f'{test_type.capitalize()} ({run_name}) - {area}: Spatial Density vs Total Time', 
                     'Time_s', 'Density: Pts Per m3', 
-                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_Density.png'), area, color='tab:red')
+                    os.path.join(graphs_dir, f'{test_namespace}_{area}_Time_vs_Density.png'), area, color='tab:red'))
         
-    print(f"\nExecution complete. All 34 plots output directly to: {graphs_dir}")
+    # =========================================================================
+    # 3. EXPORT METRICS TO EXCEL
+    # =========================================================================
+    if global_metrics_list:
+        print("\nCompiling regression metrics...")
+        df_metrics = pandas.DataFrame(global_metrics_list)
+        
+        # Open the workbook in append mode ('a') so we don't overwrite existing sheets
+        # if_sheet_exists='replace' ensures we can re-run this script safely on the same file
+        with pandas.ExcelWriter(excel_path, engine='openpyxl', mode='a', if_sheet_exists='replace') as writer:
+            df_metrics.to_excel(writer, sheet_name='Regression_Metrics', index=False)
+            for sheet_name in writer.sheets:
+                worksheet = writer.sheets[sheet_name]
+                
+                # Iterate over every single column in the worksheet
+                for col in worksheet.columns:
+                    # Find the maximum character length among all cells in this column
+                    # We cast to string to handle integers/floats accurately
+                    max_len = max(len(str(cell.value or '')) for cell in col)
+                    
+                    # Extract the alphanumeric letter coordinate for the column (e.g., 'A', 'B', 'AA')
+                    col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                    
+                    # Apply the calculation: max length found + 3 buffer characters for visual padding
+                    # We enforce a minimum width of 10 so thin data columns don't compress their headers
+                    worksheet.column_dimensions[col_letter].width = max(max_len + 3, 10)
+            
+        print(f"  --> Successfully appended [Regression_Metrics] tab to: {excel_path}")
+    else:
+        print("\nWarning: No regression metrics were generated.")
+
+    print(f"\nExecution complete. All plots output directly to: {graphs_dir}")
+        
 
 if __name__ == "__main__":
     main()
