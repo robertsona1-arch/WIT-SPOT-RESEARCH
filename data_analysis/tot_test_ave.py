@@ -94,10 +94,12 @@ def main():
                     if sheet in sheets_to_ignore:
                         continue
                         
+                    """
                     # --- FILTER STEP: Explicitly omit Front_lf_box ---
                     if sheet == 'Front_lf_box':
                         continue
                     # --------------------------------------------------
+                    """
                         
                     df = pandas.read_excel(xls, sheet_name=sheet)
                     

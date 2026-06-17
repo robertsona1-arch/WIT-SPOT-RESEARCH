@@ -22,7 +22,7 @@ def main():
         'standing_map_180deg',
         'standing_map_0deg',
         'varying_height_0deg',
-        'varying_height_180deg'
+        #'varying_height_180deg'
     ]
 
     valid_paths = {}
@@ -100,7 +100,7 @@ def main():
         'standing_map_0deg': '#2ca02c',
         'standing_map_180deg': '#d62728',
         'varying_height_0deg': '#9467bd',
-        'varying_height_180deg': '#8c564b'
+        #'varying_height_180deg': '#8c564b'
     }
 
     sns.set_theme(context="paper", style="whitegrid", font_scale=1.2)

@@ -75,7 +75,7 @@ def main():
         'standing_map_180deg',
         'standing_map_0deg',
         'varying_height_0deg',
-        'varying_height_180deg'
+        #'varying_height_180deg'
     ]
 
     # Verify all directories exist up front
@@ -153,7 +153,7 @@ def main():
         'standing_map_0deg': '#2ca02c',     # Green
         'standing_map_180deg': '#d62728',   # Red
         'varying_height_0deg': '#9467bd',   # Purple
-        'varying_height_180deg': '#8c564b' # Brown
+        #'varying_height_180deg': '#8c564b' # Brown
     }
 
     # 3. Plotting Loop: One folder per object, containing 10 metrics each

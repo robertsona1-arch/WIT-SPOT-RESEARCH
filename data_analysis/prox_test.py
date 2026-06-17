@@ -1,9 +1,63 @@
-import pandas as pd
-import seaborn as sns
-import matplotlib.pyplot as plt
+#general stuff
 import argparse
-from pathlib import Path
+import logging
+import os
+import struct #ply conversion
 import sys
+import time
+import traceback
+import math
+from datetime import datetime
+from unittest.mock import MagicMock
+import numpy as np
+import open3d as o3d
+import csv
+import json
+import glob
+import pandas 
+import re 
+import seaborn
+import matplotlib.pyplot as plt
+import openpyxl
+from openpyxl.utils import get_column_letter
+from pathlib import Path
+from scipy.optimize import curve_fit
+import warnings
+
+#bd specific imports
+import google.protobuf.timestamp_pb2
+#import graph_nav_util
+import bosdyn.client.channel 
+import bosdyn.client.util
+import bosdyn.client.graph_nav 
+import bosdyn.client
+
+from bosdyn.api import geometry_pb2, power_pb2, robot_state_pb2, robot_command_pb2 as generic_robot_command_pb2, trajectory_pb2, world_object_pb2, basic_command_pb2
+from bosdyn.api.gps import gps_pb2
+from bosdyn.api.graph_nav import graph_nav_pb2, map_pb2, nav_pb2, map_processing_pb2, recording_pb2
+from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
+from bosdyn.client.graph_nav import GraphNavClient
+from bosdyn.client.map_processing import MapProcessingServiceClient
+from bosdyn.client.math_helpers import Quat, SE3Pose
+from bosdyn.client.recording import GraphNavRecordingServiceClient
+from bosdyn.client import map_processing
+from bosdyn.client.robot import Robot
+from bosdyn.client.lease import LeaseKeepAlive
+from bosdyn.client.frame_helpers import GRAV_ALIGNED_BODY_FRAME_NAME, ODOM_FRAME_NAME, get_se2_a_tform_b, BODY_FRAME_NAME, get_a_tform_b, VISION_FRAME_NAME
+#from bosdyn.client.graph_nav_recording import GraphNavRecordingClient # Standalone in 5.x
+from bosdyn.client.robot_command import RobotCommandClient, RobotCommandBuilder
+from bosdyn.client.robot_state import RobotStateClient
+from bosdyn.client import math_helpers
+from bosdyn.client.math_helpers import SE2Pose
+from bosdyn.client.world_object import WorldObjectClient
+from bosdyn.client.image import ImageClient, save_images_as_files
+
+#google imports
+import grpc
+
+from google.protobuf import wrappers_pb2 as wrappers
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Compare standing baseline vs closer proximity conditions for quadrants and run averages.")
@@ -50,11 +104,11 @@ def main():
             
         file_to_open = excel_files[0]
         try:
-            xls = pd.ExcelFile(file_to_open)
+            xls = pandas.ExcelFile(file_to_open)
             
             # Ingest Global Dashboard Averages
             if 'Averages_Dashboard' in xls.sheet_names:
-                df_dash = pd.read_excel(xls, sheet_name='Averages_Dashboard')
+                df_dash = pandas.read_excel(xls, sheet_name='Averages_Dashboard')
                 df_dash = df_dash.rename(columns=rename_map)
                 df_dash['Test_Environment'] = env_name
                 dashboard_data_compiled.append(df_dash)
@@ -67,7 +121,7 @@ def main():
                     continue
                 
                 if any(q in sheet_lower for q in ['front_lf', 'front_rt', 'back_lf', 'back_rt', 'front lf', 'front rt', 'back lf', 'back rt']):
-                    df = pd.read_excel(xls, sheet_name=sheet)
+                    df = pandas.read_excel(xls, sheet_name=sheet)
                     df['Test_Environment'] = env_name
                     df['Box_Identifier'] = sheet  
                     
@@ -91,8 +145,8 @@ def main():
         print("[CRITICAL] Missing necessary quadrant or dashboard data sheets.")
         sys.exit(1)
 
-    combined_quad_df = pd.concat(quadrant_data_compiled, ignore_index=True)
-    combined_dash_df = pd.concat(dashboard_data_compiled, ignore_index=True)
+    combined_quad_df = pandas.concat(quadrant_data_compiled, ignore_index=True)
+    combined_dash_df = pandas.concat(dashboard_data_compiled, ignore_index=True)
 
     metric_pairs = [
         ('Snap_Count', 'Point_Count', 'Snap Count vs Point Count'),
