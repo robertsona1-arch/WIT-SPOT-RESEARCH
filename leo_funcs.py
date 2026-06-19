@@ -1099,3 +1099,52 @@ def calculate_best_fit(x, y, is_bivariate=False):
     except: pass
 
     return best_func, best_params, best_name, best_r2, x_min, x_max
+
+def calculate_temporal_jitter(y_array):
+    """Calculates high-frequency signal ripple using array-safe NumPy tracking."""
+    # Convert to a standard NumPy array if it isn't one already
+    y_data = np.asarray(y_array)
+    
+    # Drop NaNs instantly using a Boolean mask instead of pandas .dropna()
+    y_clean = y_data[~np.isnan(y_data)]
+    
+    if len(y_clean) < 2:
+        return 0.0
+        
+    # Standard ripple calculus (root mean square of differences)
+    differences = np.diff(y_clean)
+    ripple_rms = np.sqrt(np.mean(differences**2))
+    return ripple_rms
+
+def standardize_columns(df):
+    """Aggressively maps variations of Excel headers to the strict configuration matrix."""
+    df.columns = df.columns.astype(str).str.strip()
+    for col in df.columns:
+        c_lower = col.lower()
+        
+        if 'volume' in c_lower:
+            df.rename(columns={col: 'Volume_m3'}, inplace=True)
+        elif 'error' in c_lower:
+            df.rename(columns={col: 'Percent_Error'}, inplace=True)
+        elif 'snap' in c_lower and 'count' in c_lower:
+            df.rename(columns={col: 'Snap_Count'}, inplace=True)
+        elif c_lower in ['time', 'time_s', 'time_sec', 'time (s)']:
+            df.rename(columns={col: 'Time_s'}, inplace=True)
+        elif 'points per snap' in c_lower:
+            df.rename(columns={col: 'Points_Per_Snap'}, inplace=True)
+        elif 'density per snap' in c_lower:
+            df.rename(columns={col: 'Density_Per_Snap'}, inplace=True)
+        elif 'points per time' in c_lower:
+            df.rename(columns={col: 'Points_Per_Time'}, inplace=True)
+        elif 'density per time' in c_lower:
+            df.rename(columns={col: 'Density_Per_Time'}, inplace=True)
+        elif 'density' in c_lower and 'time' not in c_lower and 'snap' not in c_lower:
+            df.rename(columns={col: 'Density_pts_m3'}, inplace=True)
+        elif 'point' in c_lower and 'count' in c_lower and 'time' not in c_lower and 'snap' not in c_lower:
+            df.rename(columns={col: 'Point_Count'}, inplace=True)
+            
+    return df
+
+def offset_power_law(x, a, b, c):
+    """Models decay toward a non-zero horizontal asymptote."""
+    return a * (x ** b) + c
