@@ -1,3 +1,9 @@
+"""
+Creates graph of RP1-RP4 directional bias using standardized color-coded primitive tracking.
+Creates legend as seperate png
+
+"""
+
 import argparse
 import os
 import sys
@@ -43,6 +49,7 @@ from leo_funcs import *
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
+colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] 
 
 def standardize_columns(df):
     """Aggressively maps variations of Excel headers using a unique 1-to-1 target lock."""
@@ -85,13 +92,13 @@ def standardize_columns(df):
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze directional sensor bias using standardized color-coded primitive tracking for RP1-RP4.")
-    parser.add_argument('--name', default="Test 2 Directional Bias", help="Official Test Name to replace {test name} in titles")
+    
     parser.add_argument('--folder', required=True, help="Root directory containing the test subfolders")
     
     args = parser.parse_args()
 
     base_dir = Path(args.folder)
-    test_name = args.name
+    test_name = "Directional Bias Analysis"
 
     if not base_dir.exists():
         print(f"[ERROR] Root directory '{base_dir}' does not exist.")
@@ -126,7 +133,6 @@ def main():
             for sheet in xls.sheet_names:
                 sheet_lower = sheet.lower().strip()
                 
-                # Check for explicit match against your exact Excel workbook tab names for the four corners
                 is_matched = True
                 if sheet_lower == 'front_lf_box':
                     df = pd.read_excel(xls, sheet_name=sheet)
@@ -160,22 +166,12 @@ def main():
 
     combined_box_df = pd.concat(box_data_compiled, ignore_index=True)
 
-    # 3-PLOT ISOLATED MATRIX
+    # 1-PLOT ISOLATED MATRIX (Concentration graphs removed)
     plots_to_generate = [
         {'y': 'Percent_Error', 'x': 'Snap_Count', 
          'title': r'{test name} Average Volume Percent Error ($E$) vs Amount of Snapshots ($n$)', 
          'y_lbl': r'Volume Percent Error ($E$) [%]', 'x_lbl': r'Amount of Snapshots ($n$)', 
-         'fn': 'Primitive_01_PercentError_vs_SnapCount.png', 'legend_loc': 'top_right'},
-         
-        {'y': 'Concentration_Value', 'x': 'Time_s', 
-         'title': r'{test name} Point Concentration ($C$) vs Map Capture Time ($t$)', 
-         'y_lbl': r'Point Concentration ($C$) [pts/m$^3$]', 'x_lbl': r'Map Capture Time ($t$) [s]', 
-         'fn': 'Primitive_02_Concentration_vs_Time.png', 'legend_loc': 'top_left'},
-         
-        {'y': 'Concentration_Rate', 'x': 'Time_s', 
-         'title': r'{test name} Concentration Accumulation Rate ($\dot{C}$) vs Map Capture Time ($t$)', 
-         'y_lbl': r'Concentration Accumulation Rate ($\dot{C}$) [pts/m$^3$/s]', 'x_lbl': r'Map Capture Time ($t$) [s]', 
-         'fn': 'Primitive_03_ConcentrationRate_vs_Time.png', 'legend_loc': 'top_right'}
+         'fn': 'Primitive_01_PercentError_vs_SnapCount.png'}
     ]
 
     output_dir = base_dir / "Directional_Bias_Analysis"
@@ -188,15 +184,12 @@ def main():
         'axes.labelsize': 12,
         'axes.labelweight': 'bold',
         'axes.titlesize': 13,
-        'axes.titleweight': 'bold',
-        'legend.frameon': True,
-        'legend.edgecolor': '#000000',
-        'legend.facecolor': '#ffffff'
+        'axes.titleweight': 'bold'
     })
 
-    # --- BIFURCATED STYLING MATRIX ---
-    # Colors lock to the Primitive geometry. Line styles lock to the Test Environment.
-    colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] 
+    # Initialize standard Matplotlib color cycle to prevent crashing
+    colors = plt.rcParams['axes.prop_cycle'].by_key()['color']
+    
     quadrants = sorted(combined_box_df['Quadrant_Class'].unique())
     color_map = {q: colors[i % len(colors)] for i, q in enumerate(quadrants)}
     
@@ -217,17 +210,12 @@ def main():
         fig, ax = plt.subplots(figsize=(10, 6.5))
 
         for (quadrant, env), group_df in combined_box_df.groupby(['Quadrant_Class', 'Test_Environment']):
-            # Filter out single-point standard deviation jumps or NaN math lines
             sorted_df = group_df.sort_values(by=x_col)
             
             c_color = color_map.get(quadrant)
             e_style = env_map.get(env)
             
             label_string = f"{quadrant} ({e_style['label']})"
-            
-            if r'C' in plot_cfg['y_lbl'] or 'Concentration' in plot_cfg['y_lbl']:
-                j_rms = calculate_temporal_jitter(sorted_df[y_col])
-                label_string += f" [RMS Jitter: {j_rms:.2f}]"
             
             ax.plot(
                 sorted_df[x_col], sorted_df[y_col],
@@ -241,27 +229,46 @@ def main():
             )
 
         final_title = plot_cfg['title'].replace('{test name}', test_name)
-        ax.set_title(final_title, pad=12)
+        fig.suptitle('Directional Bias Analysis', fontsize=16, fontweight='bold')
+        ax.set_title(r'Average Volume Percent Error ($\bar{E}$) vs. Amount of Snapshots ($n$)', fontsize=12, fontweight='bold')
         ax.set_xlabel(plot_cfg['x_lbl'])
-        ax.set_ylabel(plot_cfg['y_lbl'])
+        ax.set_ylabel(r'Average Volume Percent Error ($\bar{E}$) [%]')
         
-        if idx == 1:
-            # Graph 1 (Error vs Snap Count): Force directly UNDER the plot canvas axis
-            ax.legend(loc='upper center', bbox_to_anchor=(0.5, -0.15), ncol=2, framealpha=1.0, edgecolor='black', fontsize=9, handlelength=4.0)
-        elif idx == 2:
-            # Graph 2 (Concentration vs Time): Force inside the TOP LEFT corner of the inner grid
-            ax.legend(loc='upper left', framealpha=1.0, edgecolor='black', fontsize=9, handlelength=4.0)
-        elif idx == 3:
-            # Graph 3 (Concentration Rate vs Time): Force inside the TOP RIGHT corner of the inner grid
-            ax.legend(loc='upper right', framealpha=1.0, edgecolor='black', fontsize=9, handlelength=4.0)
-
+        # Save the main plot WITHOUT a legend
         plt.tight_layout()
+        main_plot_path = output_dir / f"Bias_{idx:02d}_{plot_cfg['fn']}"
+        plt.savefig(main_plot_path, dpi=300, bbox_inches='tight')
+        print(f"  [SAVED] -> {main_plot_path.name}")
+        
+        # --- ISOLATED LEGEND EXPORT ---
+        print("  [EXPORTING] Generating isolated legend PNG...")
+        handles, labels = ax.get_legend_handles_labels()
+        
+        # Create a new, blank figure specifically for the legend
+        legend_fig, legend_ax = plt.subplots(figsize=(8, 1.5))
+        legend_ax.axis('off') 
+        
+        legend = legend_ax.legend(
+            handles=handles, 
+            labels=labels,
+            loc='center', 
+            ncol=2,           
+            fontsize=14,      
+            frameon=True,     
+            shadow=True,
+            edgecolor='black',
+            facecolor='#ffffff',
+            framealpha=1.0
+        )
+        
+        legend_path = output_dir / "Bias_00_Isolated_Legend.png"
+        legend_fig.savefig(legend_path, bbox_inches='tight', dpi=300, transparent=True)
+        plt.close(legend_fig)
+        print(f"  [SAVED] -> {legend_path.name}")
+        
+        plt.close(fig) # Close main figure
 
-        plt.savefig(output_dir / f"Bias_{idx:02d}_{plot_cfg['fn']}", dpi=300, bbox_inches='tight')
-        plt.close()
-        print(f"  [SAVED] -> Bias_{idx:02d}_{plot_cfg['fn']}")
-
-    print(f"\n[SUCCESS] Directional mapping finalized. RP1 through RP4 isolated successfully.")
+    print(f"\n[SUCCESS] Directional mapping finalized. Visualizations condensed.")
 
 if __name__ == "__main__":
     main()
