@@ -1117,34 +1117,129 @@ def calculate_temporal_jitter(y_array):
     return ripple_rms
 
 def standardize_columns(df):
-    """Aggressively maps variations of Excel headers to the strict configuration matrix."""
+    """Aggressively maps variations of Excel headers using a unique 1-to-1 target lock."""
     df.columns = df.columns.astype(str).str.strip()
+    renamed_targets = set()
+    new_names = {}
+    
     for col in df.columns:
         c_lower = col.lower()
-        
-        if 'volume' in c_lower:
-            df.rename(columns={col: 'Volume_m3'}, inplace=True)
-        elif 'error' in c_lower:
-            df.rename(columns={col: 'Percent_Error'}, inplace=True)
-        elif 'snap' in c_lower and 'count' in c_lower:
-            df.rename(columns={col: 'Snap_Count'}, inplace=True)
-        elif c_lower in ['time', 'time_s', 'time_sec', 'time (s)']:
-            df.rename(columns={col: 'Time_s'}, inplace=True)
-        elif 'points per snap' in c_lower:
-            df.rename(columns={col: 'Points_Per_Snap'}, inplace=True)
-        elif 'density per snap' in c_lower:
-            df.rename(columns={col: 'Density_Per_Snap'}, inplace=True)
-        elif 'points per time' in c_lower:
-            df.rename(columns={col: 'Points_Per_Time'}, inplace=True)
-        elif 'density per time' in c_lower:
-            df.rename(columns={col: 'Density_Per_Time'}, inplace=True)
-        elif 'density' in c_lower and 'time' not in c_lower and 'snap' not in c_lower:
-            df.rename(columns={col: 'Density_pts_m3'}, inplace=True)
-        elif 'point' in c_lower and 'count' in c_lower and 'time' not in c_lower and 'snap' not in c_lower:
-            df.rename(columns={col: 'Point_Count'}, inplace=True)
+        if 'actual' in c_lower or 'absolute' in c_lower:
+            continue
             
-    return df
+        if 'volume' in c_lower and 'Volume_m3' not in renamed_targets:
+            new_names[col] = 'Volume_m3'
+            renamed_targets.add('Volume_m3')
+        elif ('global_mean_percent_error' in c_lower or 'error' in c_lower) and 'Percent_Error' not in renamed_targets:
+            new_names[col] = 'Percent_Error'
+            renamed_targets.add('Percent_Error')
+        elif 'snap' in c_lower and 'count' in c_lower and 'Snap_Count' not in renamed_targets:
+            new_names[col] = 'Snap_Count'
+            renamed_targets.add('Snap_Count')
+        elif c_lower in ['time', 'time_s', 'time_sec', 'time (s)'] and 'Time_s' not in renamed_targets:
+            new_names[col] = 'Time_s'
+            renamed_targets.add('Time_s')
+        elif ('average density per time' in c_lower or 'density per time' in c_lower) and 'Concentration_Rate' not in renamed_targets:
+            new_names[col] = 'Concentration_Rate'
+            renamed_targets.add('Concentration_Rate')
+        elif ('density: pts per m3' in c_lower or 'average density' in c_lower or 'density' in c_lower) and 'time' not in c_lower and 'snap' not in c_lower and 'Concentration_Value' not in renamed_targets:
+            new_names[col] = 'Concentration_Value'
+            renamed_targets.add('Concentration_Value')
+            
+    df.rename(columns=new_names, inplace=True)
+    return df.loc[:, ~df.columns.duplicated()]
 
 def offset_power_law(x, a, b, c):
     """Models decay toward a non-zero horizontal asymptote."""
     return a * (x ** b) + c
+
+def compute_regression_stats(x_data, y_mean, is_rate_curve=False):
+    """Computes regression arrays and formatted legend strings safely by filtering out NaN/Inf values."""
+    # Convert inputs cleanly to numpy arrays
+    x_data = np.asarray(x_data, dtype=float)
+    y_mean = np.asarray(y_mean, dtype=float)
+    
+    # CRITICAL FIXED LINE: Create a boolean mask to filter out NaN and Infinite cells
+    valid_mask = np.isfinite(x_data) & np.isfinite(y_mean)
+    
+    x_clean = x_data[valid_mask]
+    y_clean = y_mean[valid_mask]
+    
+    # Defensive check: if not enough data points remain to perform a regression, exit gracefully
+    if len(x_clean) < 2:
+        return np.zeros_like(x_data), "Var: 0.0 | Rpl: 0.0 | Fit: Insufficient Data"
+
+    var_val = np.var(y_clean)
+    j_rms = calculate_temporal_jitter(y_clean)
+    
+    if is_rate_curve:
+        try:
+            popt, _ = curve_fit(offset_power_law, x_clean, y_clean, p0=[500.0, -0.8, 150.0], 
+                                bounds=([0.1, -3.0, 0.0], [5000.0, -0.01, 500.0]), maxfev=10000)
+            # Predict over the original x_data range so plotting dimensions remain unbroken
+            y_pred = offset_power_law(x_data, *popt)
+            
+            ss_res = np.sum((y_clean - offset_power_law(x_clean, *popt))**2)
+            ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+            r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
+            eq_str = f"Pow Law ($R^2={r2_val:.2f}$)"
+        except:
+            slope, intercept = np.polyfit(x_clean, y_clean, 1)
+            y_pred = slope * x_data + intercept
+            ss_res, ss_tot = np.sum((y_clean - (slope * x_clean + intercept))**2), np.sum((y_clean - np.mean(y_clean))**2)
+            r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
+            eq_str = f"y={slope:.1f}x+{intercept:.1f} ($R^2={r2_val:.2f}$)"
+    else:
+        slope, intercept = np.polyfit(x_clean, y_clean, 1)
+        y_pred = slope * x_data + intercept
+        
+        ss_res = np.sum((y_clean - (slope * x_clean + intercept))**2)
+        ss_tot = np.sum((y_clean - np.mean(y_clean))**2)
+        r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
+        eq_str = f"y={slope:.2f}x+{intercept:.1f} ($R^2={r2_val:.2f}$)"
+        
+    metrics_str = f"Var: {var_val:.1f} | Rpl: {j_rms:.1f} | {eq_str}"
+    return y_pred, metrics_str
+"""
+def build_1x2_dashboard_panel(df, panel_cfgs, save_path, global_title, env_style_map):
+    fig, axes = plt.subplots(1, 2, figsize=(12, 6.5))
+    fig.suptitle(global_title, fontsize=15, weight='bold', y=0.98)
+    plt.style.use('seaborn-v0_8-whitegrid')
+    
+    for idx, cfg in enumerate(panel_cfgs):
+        ax = axes[idx]
+        is_rate = (idx == 1)
+        
+        for env, group_dash in df.groupby('Test_Environment'):
+            style = env_style_map[env]
+            
+            sorted_dash = group_dash.sort_values(by=cfg['x'])
+            x_dash = sorted_dash[cfg['x']].to_numpy()
+            y_dash = sorted_dash[cfg['y']].to_numpy()
+            
+            y_pred, metrics_str = compute_regression_stats(x_dash, y_dash, is_rate)
+            full_label = f"Global Avg ({style['label']})\n[{metrics_str}]"
+            
+            ax.plot(x_dash, y_dash, color=style['color'], linestyle=style['linestyle'], 
+                    marker=style['marker'], markersize=6, linewidth=2.5, label=full_label)
+            ax.plot(x_dash, y_pred, color=style['color'], linestyle=':', linewidth=2.0)
+
+        ax.set_title(cfg['title'], weight='bold', fontsize=12, pad=10)
+        ax.set_xlabel(cfg['x_lbl'], fontsize=11)
+        ax.set_ylabel(cfg['y_lbl'], fontsize=11)
+        
+        # OPEN LEO_FUNCS.PY AND LOCATE THIS BLOCK INSIDE THE FUNCTION:
+        ax.legend(
+            loc='upper center', 
+            bbox_to_anchor=(0.5, -0.25),  # Pushed down to handle larger text boundaries
+            ncol=1, 
+            fontsize=14,                  # UPGRADED: Change this from 8 to 14
+            frameon=True, 
+            edgecolor='black', 
+            handlelength=4.0              # UPGRADED: Elongated for visual balance
+        )
+
+    plt.tight_layout()
+    plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    plt.close()
+"""
