@@ -77,14 +77,12 @@ def compute_regression_stats(x_data, y_mean, is_rate_curve=False):
     return y_pred, metrics_str
 
 def main():
-    parser = argparse.ArgumentParser(description="Compile 3-Way Composite Dashboard Analysis.")
+    parser = argparse.ArgumentParser(description="Compile 2-Way Composite Dashboard Analysis.")
     parser.add_argument('--folder', required=True, help="Root directory containing test subfolders")
     args = parser.parse_args()
 
     base_dir = Path(args.folder)
     
-    # IMPORTANT: Verify 'proximity_map' matches your exact 1.5m test folder name
-    #target_subfolders = ['standing_map_0deg', 'rotating_map', 'closer'] 
     target_subfolders = ['standing_map_0deg', 'rotating_map']
     
     dashboard_rows = []
@@ -158,18 +156,15 @@ def main():
     # Integrated precise shapes and hex colors for distinct visual contrast
     env_style_map = {
         'standing_map_0deg': {'linestyle': '-', 'marker': 'o', 'label': 'Static Baseline (3.5m)', 'color': '#ae2012'},
-        'rotating_map': {'linestyle': '--', 'marker': '^', 'label': 'Rotational Drive', 'color': '#005f73'},
-        #'closer': {'linestyle': '-.', 'marker': '*', 'label': 'Proximity Range (1.5m)', 'color': '#ca6702'}
+        'rotating_map': {'linestyle': '--', 'marker': '^', 'label': 'Rotational Drive', 'color': '#005f73'}
     }
 
     plt.style.use('seaborn-v0_8-whitegrid')
     fig, axes = plt.subplots(1, 2, figsize=(15, 8.5)) 
     fig.suptitle("Composite Operational Limits Analysis", fontsize=22, weight='bold', y=0.98)
     
-    legend_handles_err = []
-    legend_labels_err = []
-    legend_handles_rate = []
-    legend_labels_rate = []
+    legend_dict_err = {}
+    legend_dict_rate = {}
 
     for idx, cfg in enumerate(panel_cfgs):
         ax = axes[idx]
@@ -200,15 +195,13 @@ def main():
             ax.plot(x_dash, y_dash, color=style['color'], linestyle=style['linestyle'], marker=style['marker'], markersize=8, linewidth=3.5)
             ax.plot(x_dash, y_pred, color=style['color'], linestyle=':', linewidth=2.5)
 
-            # Generate massive handles for the 2x3 independent legend export
+            # Generate handles for independent legend export
             custom_handle = Line2D([0], [0], color=style['color'], linestyle=':', linewidth=3.0, marker=style['marker'], markersize=14, markeredgecolor=style['color'])
             
             if idx == 0:
-                legend_handles_err.append(custom_handle)
-                legend_labels_err.append(full_label)
+                legend_dict_err[env] = (custom_handle, full_label)
             else:
-                legend_handles_rate.append(custom_handle)
-                legend_labels_rate.append(full_label)
+                legend_dict_rate[env] = (custom_handle, full_label)
 
         ax.set_title(cfg['title'], weight='bold', fontsize=18, pad=12)
         ax.set_xlabel(cfg['x_lbl'], fontsize=16, weight='bold')
@@ -220,49 +213,30 @@ def main():
     plt.savefig(main_save_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    # --- FIXED 3x2 VERTICAL MATRIX LEGEND EXPORT ---
-    # Column 1 (Left): Volume Error      | Column 2 (Right): Accumulation Rate
-    # Row 1 (Top):    Rotational Drive  | Row 1 (Top):     Rotational Drive
-    # Row 2 (Middle): Proximity Range   | Row 2 (Middle):  Proximity Range
-    # Row 3 (Bottom): Static Baseline   | Row 3 (Bottom):  Static Baseline
-    # Defensive check to catch directory mismatch bugs before they trigger an IndexError
-    if len(legend_handles_err) < 3 or len(legend_handles_rate) < 3:
+    # --- 2x2 VERTICAL MATRIX LEGEND EXPORT ---
+    # Matplotlib fills legends column-first with ncol=2:
+    # Column 0 (Left)  : Item 0 (Row 1), Item 1 (Row 2) -> Volume Error
+    # Column 1 (Right) : Item 2 (Row 1), Item 3 (Row 2) -> Accumulation Rate
+    if len(legend_dict_err) < 2 or len(legend_dict_rate) < 2:
         print(f"\n[CRITICAL ERROR] Legend matrix construction failed.")
-        print(f"Expected 3 target profiles but only ingested {len(legend_handles_err)}.")
-        print(f"Check your file directory. Is your proximity folder named exactly as specified in the script?")
+        print(f"Expected 2 target profiles but only ingested {len(legend_dict_err)}.")
         sys.exit(1)
 
-    # --- FIXED 3x2 VERTICAL MATRIX LEGEND EXPORT ---
-    legend_fig, legend_ax = plt.subplots(figsize=(14, 4.0)) 
+    legend_fig, legend_ax = plt.subplots(figsize=(14, 3.2)) 
     legend_ax.axis('off')
     
-    # Map loop indexes to fit row-by-row population across exactly 2 columns
-    # legend_handles_err:  [0]=Baseline, [1]=Rotating, [2]=Proximity
-    # legend_handles_rate: [0]=Baseline, [1]=Rotating, [2]=Proximity
-
-    """
-    matrix_3x2_handles = [
-        legend_handles_err[1], legend_handles_rate[1],  # Row 1: Rotating
-        legend_handles_err[0], legend_handles_rate[0],  # Row 2: Proximity
-        legend_handles_err[2], legend_handles_rate[2]   # Row 3: Baseline
-    ]
-    
-    matrix_3x2_labels = [
-        legend_labels_err[1], legend_labels_rate[1],
-        legend_labels_err[0], legend_labels_rate[0],
-        legend_labels_err[2], legend_labels_rate[2]
-    ]
-    """
     matrix_2x2_handles = [
-        legend_handles_err[0], legend_handles_err[1],  # Row 1: Rotating
-        #legend_handles_err[2], legend_handles_rate[0],  # Row 2: Proximity
-        legend_handles_rate[1], legend_handles_rate[2]   # Row 3: Baseline
+        legend_dict_err['rotating_map'][0],          # Col 0, Row 1: Rotating (Volume Error)
+        legend_dict_err['standing_map_0deg'][0],      # Col 0, Row 2: Baseline (Volume Error)
+        legend_dict_rate['rotating_map'][0],         # Col 1, Row 1: Rotating (Accumulation Rate)
+        legend_dict_rate['standing_map_0deg'][0]     # Col 1, Row 2: Baseline (Accumulation Rate)
     ]
     
     matrix_2x2_labels = [
-        legend_labels_err[0], legend_labels_err[1],
-        #legend_labels_err[2], legend_labels_rate[0],
-        legend_labels_rate[1], legend_labels_rate[2]
+        legend_dict_err['rotating_map'][1],
+        legend_dict_err['standing_map_0deg'][1],
+        legend_dict_rate['rotating_map'][1],
+        legend_dict_rate['standing_map_0deg'][1]
     ]
     
     legend_ax.legend(

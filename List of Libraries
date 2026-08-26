@@ -29,6 +29,7 @@ from openpyxl.utils import get_column_letter
 from pathlib import Path
 from scipy.optimize import curve_fit
 import warnings
+from scipy.spatial import ConvexHull, QhullError
 
 #bd specific imports
 import google.protobuf.timestamp_pb2

@@ -24,6 +24,7 @@ sys.path.append(parent_dir)
 from leo_funcs import fine_align
 
 """
+#general stuff
 import argparse
 import logging
 import os
@@ -47,6 +48,8 @@ import openpyxl
 from openpyxl.utils import get_column_letter
 from pathlib import Path
 from scipy.optimize import curve_fit
+import warnings
+from scipy.spatial import ConvexHull, QhullError
 
 #bd specific imports
 import google.protobuf.timestamp_pb2
@@ -80,6 +83,8 @@ from bosdyn.client.image import ImageClient, save_images_as_files
 import grpc
 
 from google.protobuf import wrappers_pb2 as wrappers
+
+
 
 
 
@@ -1243,3 +1248,52 @@ def build_1x2_dashboard_panel(df, panel_cfgs, save_path, global_title, env_style
     plt.savefig(save_path, dpi=300, bbox_inches='tight')
     plt.close()
 """
+
+def calculate_dual_volumes_sor(points, bounds, axis_mode):
+    """
+    Applies SOR (k=20, alpha=2.0) and calculates both Non-Oriented AABB 
+    and 3D Convex Hull volumes simultaneously.
+    """
+    x_range = bounds["x_range"]
+    
+    # 1. Mask spatial ROI based on axis mode
+    if axis_mode == 'xy':
+        y_range = bounds["y_range"]
+        mask = (points[:, 0] >= x_range[0]) & (points[:, 0] <= x_range[1]) & \
+               (points[:, 1] >= y_range[0]) & (points[:, 1] <= y_range[1])
+    else:
+        z_range = bounds["z_range"]
+        mask = (points[:, 0] >= x_range[0]) & (points[:, 0] <= x_range[1]) & \
+               (points[:, 2] >= z_range[0]) & (points[:, 2] <= z_range[1])
+               
+    pts_roi = points[mask]
+    
+    # Check for empty/sparse ROI before filtering
+    if len(pts_roi) < 4:
+        return 0.0, 0.0, len(pts_roi)
+
+    # 2. Statistical Outlier Removal (SOR) -> k=20, alpha=2.0
+    pcd = o3d.geometry.PointCloud()
+    pcd.points = o3d.utility.Vector3dVector(pts_roi)
+    pcd_clean, _ = pcd.remove_statistical_outlier(nb_neighbors=20, std_ratio=2.0)
+    pts_clean = np.asarray(pcd_clean.points)
+
+    if len(pts_clean) < 4:
+        return 0.0, 0.0, len(pts_clean)
+
+    # 3. Calculate Non-Oriented AABB Volume
+    min_b = np.min(pts_clean, axis=0)
+    max_b = np.max(pts_clean, axis=0)
+    dims = max_b - min_b
+    aabb_vol = float(dims[0] * dims[1] * dims[2])
+
+    # 4. Calculate 3D Convex Hull Volume (with safe fallback to AABB if planar/degenerate)
+    hull_vol = aabb_vol 
+    try:
+        hull = ConvexHull(pts_clean)
+        hull_vol = float(hull.volume)
+    except (QhullError, ValueError, Exception):
+        pass
+
+    return aabb_vol, hull_vol, len(pts_clean)
+
