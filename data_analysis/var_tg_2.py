@@ -1,3 +1,9 @@
+"""
+Gives two panel graph and seperate legend comparing vertical scaling of CY2 and Global Average for SOR Hull calculations.
+Last updated: 8/27/26
+
+"""
+
 import argparse
 import os
 import sys
@@ -12,6 +18,11 @@ from matplotlib.lines import Line2D
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+from leo_funcs import *
+
 # Fallback style guide mapping to match your plotted figures
 style_guide = {
     'CY2': {
@@ -24,83 +35,6 @@ style_guide = {
     }
 }
 
-def standardize_columns(df):
-    df.columns = df.columns.astype(str).str.strip()
-    renamed_targets = set()
-    new_names = {}
-    for col in df.columns:
-        c_lower = col.lower()
-        if 'actual' in c_lower or 'absolute' in c_lower:
-            continue
-        if 'volume' in c_lower and 'Volume_m3' not in renamed_targets:
-            new_names[col] = 'Volume_m3'
-            renamed_targets.add('Volume_m3')
-        elif ('global_mean_percent_error' in c_lower or 'error' in c_lower) and 'Percent_Error' not in renamed_targets:
-            new_names[col] = 'Percent_Error'
-            renamed_targets.add('Percent_Error')
-        elif 'snap' in c_lower and 'count' in c_lower and 'Snap_Count' not in renamed_targets:
-            new_names[col] = 'Snap_Count'
-            renamed_targets.add('Snap_Count')
-        elif c_lower in ['time', 'time_s', 'time_sec', 'time (s)'] and 'Time_s' not in renamed_targets:
-            new_names[col] = 'Time_s'
-            renamed_targets.add('Time_s')
-        elif ('average density per time' in c_lower or 'density per time' in c_lower) and 'Concentration_Rate' not in renamed_targets:
-            new_names[col] = 'Concentration_Rate'
-            renamed_targets.add('Concentration_Rate')
-        elif ('density: pts per m3' in c_lower or 'average density' in c_lower or 'density' in c_lower) and 'time' not in c_lower and 'snap' not in c_lower and 'Concentration_Value' not in renamed_targets:
-            new_names[col] = 'Concentration_Value'
-            renamed_targets.add('Concentration_Value')
-    df.rename(columns=new_names, inplace=True)
-    return df.loc[:, ~df.columns.duplicated()]
-
-def offset_power_law(x, a, b, c):
-    return a * (x ** b) + c
-
-def compute_regression_stats(x_data, y_mean, is_rate_curve=False):
-    # 1. Create a strict mask to filter out NaN or Inf values from both arrays
-    valid_mask = np.isfinite(x_data) & np.isfinite(y_mean)
-    fit_x = x_data[valid_mask]
-    fit_y = y_mean[valid_mask]
-    
-    # 2. Defensive fallback if the dataset is entirely corrupted/empty
-    if len(fit_x) < 2:
-        return np.zeros_like(x_data), "Std: 0.0 | Insufficient Data"
-
-    std_val = np.std(fit_y)
-    
-    if is_rate_curve:
-        try:
-            # Fit using the clean data
-            popt, _ = curve_fit(offset_power_law, fit_x, fit_y, p0=[500.0, -0.8, 150.0], bounds=([0.1, -3.0, 0.0], [5000.0, -0.01, 500.0]), maxfev=10000)
-            
-            # Project the trendline back onto the original x-axis length for plotting
-            y_pred = offset_power_law(x_data, *popt) 
-            
-            # Calculate R^2 strictly on the valid data points
-            y_pred_fit = offset_power_law(fit_x, *popt)
-            ss_res = np.sum((fit_y - y_pred_fit)**2)
-            ss_tot = np.sum((fit_y - np.mean(fit_y))**2)
-            r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
-            eq_str = f"Pow Law ($R^2={r2_val:.2f}$)"
-        except:
-            slope, intercept = np.polyfit(fit_x, fit_y, 1)
-            y_pred = slope * x_data + intercept 
-            y_pred_fit = slope * fit_x + intercept
-            ss_res, ss_tot = np.sum((fit_y - y_pred_fit)**2), np.sum((fit_y - np.mean(fit_y))**2)
-            r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
-            eq_str = f"y={slope:.1f}x+{intercept:.1f} ($R^2={r2_val:.2f}$)"
-    else:
-        # Linear regression using the clean data
-        slope, intercept = np.polyfit(fit_x, fit_y, 1)
-        y_pred = slope * x_data + intercept 
-        
-        y_pred_fit = slope * fit_x + intercept
-        ss_res, ss_tot = np.sum((fit_y - y_pred_fit)**2), np.sum((fit_y - np.mean(fit_y))**2)
-        r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
-        eq_str = f"y={slope:.2f}x+{intercept:.1f} ($R^2={r2_val:.2f}$)"
-        
-    metrics_str = f"Std: {std_val:.1f} | {eq_str}"
-    return y_pred, metrics_str
 
 def build_horizontal_panel(df_map, style_guide, panel_cfgs, save_path, global_title):
     # Enforce a 1x2 panel layout
@@ -119,9 +53,19 @@ def build_horizontal_panel(df_map, style_guide, panel_cfgs, save_path, global_ti
             if sub_df.empty: continue
                 
             for env, group_df in sub_df.groupby('Test_Environment'):
-                sorted_df = group_df.sort_values(by=x_col)
-                x_data = sorted_df[x_col].to_numpy()
-                y_mean = sorted_df[y_col].to_numpy()
+                # 1. Safely copy to avoid SettingWithCopy warnings
+                clean_df = group_df.copy()
+                
+                # 2. Force the columns to numeric, turning strings like 'Max' into NaN
+                clean_df[x_col] = pd.to_numeric(clean_df[x_col], errors='coerce')
+                clean_df[y_col] = pd.to_numeric(clean_df[y_col], errors='coerce')
+                
+                # 3. Drop any rows that contained text strings
+                clean_df = clean_df.dropna(subset=[x_col, y_col])
+                sorted_df = clean_df.sort_values(by=x_col)
+                # CRITICAL FIX: Cast to float immediately upon extraction
+                x_data = np.asarray(sorted_df[x_col].to_numpy(), dtype=float)
+                y_mean = np.asarray(sorted_df[y_col].to_numpy(), dtype=float)
                 
                 y_series = pd.Series(y_mean)
                 y_std = y_series.rolling(window=3, min_periods=1).std().fillna(0).to_numpy()
@@ -134,10 +78,14 @@ def build_horizontal_panel(df_map, style_guide, panel_cfgs, save_path, global_ti
                 full_label = f"{meta['label']} ({metric_tag})\n[{metrics_str}]"
                 
                 clamped_std = np.clip(y_std, 0, np.nanmax(np.abs(y_mean)) * 0.75)
+
+                x_data = np.asarray(x_data, dtype=float)
+                y_mean = np.asarray(y_mean, dtype=float)
+                clamped_std = np.asarray(clamped_std, dtype=float)
                 
                 # Render to subplot
                 ax.fill_between(x_data, y_mean - clamped_std, y_mean + clamped_std, color=meta['color'], alpha=0.10)
-                ax.plot(x_data, y_mean, color=meta['color'], linestyle=meta['linestyle'], marker=meta['marker'], markersize=4, alpha=0.4)
+                ax.plot(x_data, y_mean, color=meta['color'], marker=meta['marker'], linestyle='-', linewidth=2, markersize=8, label=meta['label'])
                 ax.plot(x_data, y_pred, color=meta['color'], linestyle=':', linewidth=2.0)
                 
                 # FIXED: Continuously capture custom legend handles for BOTH idx == 0 and idx == 1
@@ -215,7 +163,8 @@ def main():
     box_data = []
     for env_name in target_subfolders:
         env_path = base_dir / env_name
-        excel_files = list(env_path.glob("Total_*.xlsx"))
+        #excel_files = list(env_path.glob("Total_*.xlsx"))
+        excel_files= list(env_path.glob("Total_Averages_SOR_Hull*.xlsx"))  # Use this for SOR Hull calc
         if not excel_files: continue
         xls = pd.ExcelFile(excel_files[0])
         for sheet in xls.sheet_names:
@@ -235,7 +184,7 @@ def main():
     cy2_isolated = combined_df[combined_df['Is_CY2'] == True].copy()
     global_averages = combined_df[combined_df['Is_CY2'] == False].copy()
 
-    output_dir = base_dir / "Vertical_Scaling_Analysis"
+    output_dir = base_dir / "Vertical_Scaling_Analysis_SOR_Con"
     output_dir.mkdir(exist_ok=True)
 
     # Simplified to two explicit targets

@@ -2,7 +2,7 @@
 SOR and Convex Hull filtering for point clouds
 
 Date Created: 8/25/26
-Last Updated: 8/25/26
+Last Updated: 8/28/26
 """
 
 
@@ -121,7 +121,10 @@ def main():
 
         for area_name, bounds in areas.items():
             # Calculate both metrics in a single pass
-            aabb_vol, hull_vol, point_count = calculate_dual_volumes_sor(points, bounds, options.axis)
+            aabb_vol, hull_vol, point_count, hull_success = calculate_dual_volumes_sor(points, bounds, options.axis)
+
+            if not hull_success:
+                print(f"Warning: Convex Hull computation failed for Snap_Count {a}, Area {area_name}. Using AABB volume as fallback.")
             
             # Base dictionary of shared metrics
             base_dict = {
@@ -136,11 +139,13 @@ def main():
             # Append to AABB list
             dict_aabb = base_dict.copy()
             dict_aabb['Volume_m3'] = round(aabb_vol, 6)
+            dict_aabb['Hull_Valid'] = True  # AABB is always valid, so we set this to True
             results_aabb.append(dict_aabb)
             
             # Append to Hull list
             dict_hull = base_dict.copy()
             dict_hull['Volume_m3'] = round(hull_vol, 6)
+            dict_hull['Hull_Valid'] = hull_success  # Adds a True/False column to Excel
             results_hull.append(dict_hull)
 
     if not results_aabb:

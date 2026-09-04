@@ -1,7 +1,7 @@
 """
 Creates graph of RP1-RP4 directional bias using standardized color-coded primitive tracking.
 Creates legend as seperate png
-
+Last updated 8/27/26
 """
 
 import argparse
@@ -50,45 +50,8 @@ from leo_funcs import *
 # Suppress warnings
 warnings.filterwarnings('ignore')
 colors = ['#1f77b4', '#ff7f0e', '#2ca02c', '#d62728'] 
+facecolor='#ffffff'
 
-def standardize_columns(df):
-    """Aggressively maps variations of Excel headers using a unique 1-to-1 target lock."""
-    df.columns = df.columns.astype(str).str.strip()
-    renamed_targets = set()
-    new_names = {}
-    
-    for col in df.columns:
-        c_lower = col.lower()
-        
-        # Hard ignore baseline actuals and absolute metrics
-        if 'actual' in c_lower or 'absolute' in c_lower:
-            continue
-            
-        if 'volume' in c_lower and 'Volume_m3' not in renamed_targets:
-            new_names[col] = 'Volume_m3'
-            renamed_targets.add('Volume_m3')
-        elif ('global_mean_percent_error' in c_lower or 'global mean percent error' in c_lower) and 'Percent_Error' not in renamed_targets:
-            new_names[col] = 'Percent_Error'
-            renamed_targets.add('Percent_Error')
-        elif 'snap' in c_lower and 'count' in c_lower and 'Snap_Count' not in renamed_targets:
-            new_names[col] = 'Snap_Count'
-            renamed_targets.add('Snap_Count')
-        elif c_lower in ['time', 'time_s', 'time_sec', 'time (s)'] and 'Time_s' not in renamed_targets:
-            new_names[col] = 'Time_s'
-            renamed_targets.add('Time_s')
-        elif ('average density per time' in c_lower or 'density per time' in c_lower) and 'Concentration_Rate' not in renamed_targets:
-            new_names[col] = 'Concentration_Rate'
-            renamed_targets.add('Concentration_Rate')
-        elif ('density: pts per m3' in c_lower or 'average density' in c_lower) and 'Concentration_Value' not in renamed_targets:
-            new_names[col] = 'Concentration_Value'
-            renamed_targets.add('Concentration_Value')
-        elif 'point' in c_lower and 'count' in c_lower and 'Point_Count' not in renamed_targets:
-            new_names[col] = 'Point_Count'
-            renamed_targets.add('Point_Count')
-            
-    df.rename(columns=new_names, inplace=True)
-    df = df.loc[:, ~df.columns.duplicated()]
-    return df
 
 def main():
     parser = argparse.ArgumentParser(description="Analyze directional sensor bias using standardized color-coded primitive tracking for RP1-RP4.")
@@ -122,7 +85,8 @@ def main():
 
     print("Extracting primitive datasets and isolating targets RP1 through RP4...")
     for env_name, env_path in valid_paths.items():
-        excel_files = list(env_path.glob("Total_*.xlsx"))
+        #excel_files = list(env_path.glob("Total_*.xlsx"))#use this for AABB calc
+        excel_files= list(env_path.glob("Total_Averages_SOR_Hull*.xlsx"))  # Use this for SOR Hull calc
         if not excel_files:
             continue
             
@@ -174,7 +138,8 @@ def main():
          'fn': 'Primitive_01_PercentError_vs_SnapCount.png'}
     ]
 
-    output_dir = base_dir / "Directional_Bias_Analysis"
+    #output_dir = base_dir / "Directional_Bias_Analysis"
+    output_dir = base_dir / "Directional_Bias_Analysis_SOR_CON"
     output_dir.mkdir(exist_ok=True)
     print(f"\nGenerating standardized color-coded figures into: {output_dir.name}/")
 
@@ -257,7 +222,7 @@ def main():
             frameon=True,     
             shadow=True,
             edgecolor='black',
-            facecolor='#ffffff',
+            facecolor=facecolor,
             framealpha=1.0
         )
         

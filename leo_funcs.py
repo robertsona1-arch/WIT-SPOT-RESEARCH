@@ -1174,8 +1174,8 @@ def compute_regression_stats(x_data, y_mean, is_rate_curve=False):
     if len(x_clean) < 2:
         return np.zeros_like(x_data), "Var: 0.0 | Rpl: 0.0 | Fit: Insufficient Data"
 
-    var_val = np.var(y_clean)
-    j_rms = calculate_temporal_jitter(y_clean)
+    std_val = np.std(y_clean)
+    #j_rms = calculate_temporal_jitter(y_clean)
     
     if is_rate_curve:
         try:
@@ -1203,7 +1203,7 @@ def compute_regression_stats(x_data, y_mean, is_rate_curve=False):
         r2_val = 1 - (ss_res / ss_tot) if ss_tot != 0 else 1.0
         eq_str = f"y={slope:.2f}x+{intercept:.1f} ($R^2={r2_val:.2f}$)"
         
-    metrics_str = f"Var: {var_val:.1f} | Rpl: {j_rms:.1f} | {eq_str}"
+    metrics_str = f"STD: {std_val:.1f} | {eq_str}"
     return y_pred, metrics_str
 """
 def build_1x2_dashboard_panel(df, panel_cfgs, save_path, global_title, env_style_map):
@@ -1270,7 +1270,7 @@ def calculate_dual_volumes_sor(points, bounds, axis_mode):
     
     # Check for empty/sparse ROI before filtering
     if len(pts_roi) < 4:
-        return 0.0, 0.0, len(pts_roi)
+        return 0.0, 0.0, len(pts_roi), False
 
     # 2. Statistical Outlier Removal (SOR) -> k=20, alpha=2.0
     pcd = o3d.geometry.PointCloud()
@@ -1279,7 +1279,7 @@ def calculate_dual_volumes_sor(points, bounds, axis_mode):
     pts_clean = np.asarray(pcd_clean.points)
 
     if len(pts_clean) < 4:
-        return 0.0, 0.0, len(pts_clean)
+        return 0.0, 0.0, len(pts_clean), False
 
     # 3. Calculate Non-Oriented AABB Volume
     min_b = np.min(pts_clean, axis=0)
@@ -1289,11 +1289,160 @@ def calculate_dual_volumes_sor(points, bounds, axis_mode):
 
     # 4. Calculate 3D Convex Hull Volume (with safe fallback to AABB if planar/degenerate)
     hull_vol = aabb_vol 
+    hull_success = False  # NEW: Flag to track if the Convex Hull actually worked
+
     try:
         hull = ConvexHull(pts_clean)
         hull_vol = float(hull.volume)
+        hull_success = True  # Marks that the Hull was successful and NOT replaced by AABB
     except (QhullError, ValueError, Exception):
+        # The exception is caught, hull_vol stays as aabb_vol, and hull_success stays False
+        print("\nWarning: Convex Hull computation failed; using AABB volume as fallback.\n")
         pass
 
-    return aabb_vol, hull_vol, len(pts_clean)
+    # Return the new flag alongside the other metrics
+    return aabb_vol, hull_vol, len(pts_clean), hull_success
+
+def apply_dataframe_math(results_list):
+    """
+    Applies the exact Pandas vector math from the original script.
+    """
+    if not results_list:
+        return None, None
+        
+    df_master = pandas.DataFrame(results_list)
+    # Bulletproof fallback: Strip whitespace and ignore case
+    df_master = df_master[df_master['Area_Name'].astype(str).str.strip().str.lower() != 'front_lf_box'].reset_index(drop=True)
+    df_master = df_master[df_master['Area_Name'] != 'Front_lf_box'].reset_index(drop=True)
+    
+    df_master['Time Per Snapshot'] = np.where(df_master['Time_s'] > 0, round(df_master['Time_s'] / df_master['Snap_Count'], 2), 0)
+    df_master['Density: Pts Per m3'] = np.where(df_master['Volume_m3'] > 0, round(df_master['Point_Count'] / df_master['Volume_m3'], 2), 0)
+    df_master['Points Per Snapshot'] = np.where(df_master['Snap_Count'] > 0, round(df_master['Point_Count'] / df_master['Snap_Count'], 2), 0)
+    df_master['Density Per Time']= np.where(df_master['Time_s'] > 0, round(df_master['Density: Pts Per m3'] / df_master['Time_s'], 2), 0)
+    df_master['Density Per Snapshot'] = np.where(df_master['Snap_Count'] > 0, round(df_master['Density: Pts Per m3'] / df_master['Snap_Count'], 2), 0)
+    df_master['Points Per Time'] = np.where(df_master['Time_s'] > 0, round(df_master['Point_Count'] / df_master['Time_s'], 2), 0)
+    
+    df_master['Average Point Count'] = round(df_master.groupby('Snap_Count')['Point_Count'].transform('mean'), 2)
+    df_master['Average Density'] = round(df_master.groupby('Snap_Count')['Density: Pts Per m3'].transform('mean'), 6)
+    df_master['Average Points Per Snapshot'] = round(df_master.groupby('Snap_Count')['Points Per Snapshot'].transform('mean'), 2)
+    df_master['Average Points Per Time']=round(df_master.groupby('Snap_Count')['Points Per Time'].transform('mean'), 2)
+    df_master['Average Density Per Time']=round(df_master.groupby('Snap_Count')['Density Per Time'].transform('mean'), 2)
+    df_master['Average Density Per Snapshot']=round(df_master.groupby('Snap_Count')['Density Per Snapshot'].transform('mean'), 2)
+
+    # All_Hulls_Valid is True ONLY if 'Hull_Valid' is True for every primitive in that snapshot
+    if 'Hull_Valid' in df_master.columns:
+        df_master['All_Hulls_Valid'] = df_master.groupby('Snap_Count')['Hull_Valid'].transform('all')
+    else:
+        df_master['All_Hulls_Valid'] = True
+
+    df_averages = df_master.groupby('Snap_Count').agg({
+        'Time_s': 'first',
+        'All_Hulls_Valid': 'first',
+        'Average Point Count': 'first',
+        'Average Density': 'first',
+        'Average Points Per Snapshot': 'first',
+        'Average Points Per Time': 'first',
+        'Average Density Per Time': 'first',
+        'Average Density Per Snapshot': 'first',
+    }).reset_index()
+    
+    return df_master, df_averages
+
+def export_to_excel(df_master, df_averages, output_path):
+    """
+    Handles multi-tab isolation and automated column autofitting.
+    """
+    print(f"\nExporting structured sheets to: {output_path}")
+    with pandas.ExcelWriter(output_path, engine='openpyxl') as writer:
+        
+        df_master.to_excel(writer, sheet_name='Master_Data', index=False)
+        df_averages.to_excel(writer, sheet_name='Averages_Dashboard', index=False)
+        
+        unique_areas = sorted(df_master['Area_Name'].unique())
+        for area in unique_areas:
+            df_area_slice = df_master[df_master['Area_Name'] == area].copy()
+            df_area_slice = df_area_slice.drop(columns=['Area_Name','Yaw_Error_deg','Dist_Error_m', 'Average Point Count','Average Density','Average Points Per Snapshot','Average Density Per Snapshot','Average Density Per Time','Average Points Per Time'])
+            
+            safe_tab_name = re.sub(r'[\*\\\/\? \:\[\]]', '_', area)[:31]
+            df_area_slice.to_excel(writer, sheet_name=safe_tab_name, index=False)
+
+        for sheet_name in writer.sheets:
+            worksheet = writer.sheets[sheet_name]
+            for col in worksheet.columns:
+                max_len = max(len(str(cell.value or '')) for cell in col)
+                col_letter = openpyxl.utils.get_column_letter(col[0].column)
+                worksheet.column_dimensions[col_letter].width = max(max_len + 3, 10)
+
+def aggregate_and_export(test_groups, metric_prefix, base_dir, true_volumes):
+    """
+    Explicitly splits primitive calculation and dashboard generation to 
+    guarantee column math is committed to the Excel engine.
+    """
+    for test_type, sheets_dict in test_groups.items():
+        if not sheets_dict:
+            continue
+
+        print(f"\nProcessing Group {test_type} [{metric_prefix}]...")
+        output_filename = base_dir / f"Total_Averages_{metric_prefix}_Group_{test_type}.xlsx"
+        
+        running_abs_errors = []
+        running_pct_errors = []
+        
+        with pandas.ExcelWriter(output_filename, engine='openpyxl') as writer:
+            
+            # --- STEP 1: Process Primitive Target Sheets First ---
+            primitive_sheets = [s for s in sheets_dict.keys() if s != 'Averages_Dashboard']
+            
+            for sheet_name in primitive_sheets:
+                combined_df = pandas.concat(sheets_dict[sheet_name], ignore_index=True)
+                averaged_df = combined_df.groupby('Snap_Count').mean(numeric_only=True).reset_index()
+                
+                # Extract actual volume from the nested JSON dictionary
+                actual_vol = true_volumes.get(sheet_name, 1.0) 
+                
+                # Dynamically find the volume column
+                vol_col = next((col for col in averaged_df.columns if 'Volume' in col and 'm3' in col), None)
+                
+                if vol_col:
+                    # Execute the math and create the new columns
+                    averaged_df['Tested_Volume_m3'] = round(averaged_df[vol_col], 6)
+                    averaged_df['Actual_Volume_m3'] = actual_vol
+                    averaged_df['Absolute_Error_m3'] = round(abs(averaged_df['Tested_Volume_m3'] - averaged_df['Actual_Volume_m3']), 6)
+                    
+                    if actual_vol > 0:
+                        averaged_df['Percent_Error'] = round((averaged_df['Absolute_Error_m3'] / averaged_df['Actual_Volume_m3']) * 100, 2)
+                    else:
+                        averaged_df['Percent_Error'] = 0.0
+                        
+                    # Drop the old generic volume column
+                    averaged_df = averaged_df.drop(columns=[vol_col])
+                    print(f"    -> {sheet_name}: Errors mathematically calculated (Actual Vol: {actual_vol})")
+                    
+                    # Cache the newly calculated error columns row-wise for the Dashboard
+                    running_abs_errors.append(averaged_df['Absolute_Error_m3'].reset_index(drop=True))
+                    running_pct_errors.append(averaged_df['Percent_Error'].reset_index(drop=True))
+                else:
+                    print(f"    -> [WARNING] No Volume column found in {sheet_name}. Available: {averaged_df.columns.tolist()}")
+                
+                # Commit the primitive sheet to Excel
+                averaged_df.to_excel(writer, index=False, sheet_name=sheet_name)
+            
+            # --- STEP 2: Process the Dashboard Last ---
+            if 'Averages_Dashboard' in sheets_dict:
+                combined_df = pandas.concat(sheets_dict['Averages_Dashboard'], ignore_index=True)
+                dash_df = combined_df.groupby('Snap_Count').mean(numeric_only=True).reset_index()
+                
+                # Intercept and append macro global error trends
+                if running_abs_errors and running_pct_errors:
+                    all_abs_df = pandas.concat(running_abs_errors, axis=1)
+                    all_pct_df = pandas.concat(running_pct_errors, axis=1)
+                    
+                    dash_df['Global_Mean_Absolute_Error_m3'] = round(all_abs_df.mean(axis=1), 6)
+                    dash_df['Global_Mean_Percent_Error'] = round(all_pct_df.mean(axis=1), 2)
+                    print(f"    -> Averages_Dashboard: Global macro errors successfully appended.")
+                
+                # Commit the dashboard sheet to Excel
+                dash_df.to_excel(writer, index=False, sheet_name='Averages_Dashboard')
+            
+        print(f"  [SUCCESS] Created new file -> {output_filename.name}")
 
