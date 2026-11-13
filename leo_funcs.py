@@ -549,6 +549,7 @@ def fine_align(robot, tag_id, dist,iter):
         
         dist_error = math.sqrt((raw_goal_odom.x - odom_tform_body.x)**2 + (raw_goal_odom.y - odom_tform_body.y)**2)
         yaw_error = abs(heading_rads - odom_tform_body.rot.to_yaw())
+        #yaw_error = abs(math.atan2(math.sin(dist_error), math.cos(yaw_error)))
         
         print(f"Current Error -> Distance: {dist_error:.4f}m | Heading: {math.degrees(yaw_error):.2f} deg")
         

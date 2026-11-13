@@ -63,6 +63,7 @@ def main (argv):
     #each client service will have its own lease client
     lease_client=leo.ensure_client('lease')
     recording_client = leo.ensure_client(GraphNavRecordingServiceClient.default_service_name)
+    command_client = leo.ensure_client(RobotCommandClient.default_service_name)
     leo_state_client=leo.ensure_client('robot-state')
     
     print("\nAuthentication complete\n")
