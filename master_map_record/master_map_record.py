@@ -1,3 +1,30 @@
+"""
+master_map_record.py
+
+mac - python3 master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
+
+windows - python master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
+
+DESC...
+
+Use ctrl+c to stop the script any time, the robot will stop and sit safetly, and any completed maps will be saved
+Please maintian a safe distance from the robot at all time
+THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET READY TO STOP THE ROBOT IF NEEDED
+
+This script pulls significant portions of code from the Boston Dynamics <blank> files and Google API <blank> files
+
+Minimail AI was used in syntax and structure
+"""
+
+"""
+Written by Adam Robertson, Wentworth Institude of Technology, Douglas D. Schumman School of Engineerning
+WIT SPOT Research Group
+Advisors: Prof. Tahmid Latif, Prof. Afsaneh Ghanavati
+Contributors: Adam Robertson, <other name>, <other name 2>
+Date Created: XX/XX/XXXX
+Last Updated: XX/XX/XXXX
+"""
+
 import time
 import os
 from bosdyn.client.recording import GraphNavRecordingServiceClient
@@ -54,6 +81,11 @@ from bosdyn.api.spot import robot_command_pb2 as spot_command_pb2
 from bosdyn.client import math_helpers
 from requests import options
 
+current_dir = os.path.dirname(os.path.abspath(__file__))
+parent_dir = os.path.dirname(current_dir)
+sys.path.append(parent_dir)
+
+from leo_funcs import check_batt_perc 
 
 ROBOT_IP ="192.168.80.3"
 
@@ -62,9 +94,9 @@ def main(argv):
     parser=argparse.ArgumentParser()
 
     #positional args
-    parser.add_argument("username",help="Username for Spot")
-    parser.add_argument("password",help="Password for Spot")
-    parser.add_argument("map_dir",help="Directory where the map is stored on the robot")
+    parser.add_argument('username',help='Spot Username')
+    parser.add_argument('password',help='Spot Password')
+    parser.add_argument('--map_dir', help='Directory example')
     options=parser.parse_args(argv)
 
     #2. create sdk & authenticate
@@ -96,9 +128,9 @@ def main(argv):
         time.sleep(3)
 
     # 2. THE FIX: Give the lease BACK to the tablet temporarily
-    print("\n--- LEASE HANDOFF ---")
-    print("On the Tablet, select 'HIJACK'. You should now have control.")
-    input("Once you are driving the robot, press ENTER here to start recording...")
+    print("\n--- LEASE HANDOFF ---\n")
+    print("\nOn the Tablet, select 'HIJACK'. You should now have control.\n")
+    input("\nOnce you are driving the robot, press ENTER here to start recording...\n")
 
     # 3. Start Recording (The script can send commands even if it doesn't 'own' the body)
     recording_client.start_recording()
