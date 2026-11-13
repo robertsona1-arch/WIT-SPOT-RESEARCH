@@ -84,7 +84,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics,ensure_recording_stopped, convert_map_to_ply_2
+from leo_funcs import check_batt_perc, turn_relative, convert_map_to_ply, turn_relative, nav_to_fid, upload_map, fine_align, log_test_metrics,ensure_recording_stopped, convert_map_to_ply_2, convert_map_to_ply_3
 
 def main(argv):
     #1. setup positional arguments
@@ -223,7 +223,7 @@ def main(argv):
                 #convert
                 print(f"\n[N{a}]Converting to ply...\n")
                 ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-                convert_map_to_ply_2(full_path,ply_name,a,to_fiducial_matrix) #new, pass matrix to converter
+                convert_map_to_ply_3(full_path,ply_name,a,to_fiducial_matrix) #new, pass matrix to converter
                 end_time = time.time()
                 end_state=state_client.get_robot_state()
                 end_batt_per=end_state.battery_states[0].charge_percentage.value

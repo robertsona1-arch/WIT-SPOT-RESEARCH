@@ -5,7 +5,9 @@ mac - python3 master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int
 
 windows - python master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
 
-DESC...
+This script is used to record a new master map of the environment. 
+Start with the tablet holding the lease. Run this script, then select hijack on tablet. 
+Select walk, then press enter on the script to start the 30s of recording. After 30s, the script will stop recording and download the map to the specified directory.
 
 Use ctrl+c to stop the script any time, the robot will stop and sit safetly, and any completed maps will be saved
 Please maintian a safe distance from the robot at all time
@@ -20,9 +22,9 @@ Minimail AI was used in syntax and structure
 Written by Adam Robertson, Wentworth Institude of Technology, Douglas D. Schumman School of Engineerning
 WIT SPOT Research Group
 Advisors: Prof. Tahmid Latif, Prof. Afsaneh Ghanavati
-Contributors: Adam Robertson, <other name>, <other name 2>
-Date Created: XX/XX/XXXX
-Last Updated: XX/XX/XXXX
+Contributors: 
+Date Created: 02/28/2026
+Last Updated: 11/12/2026
 """
 
 import time
@@ -135,7 +137,9 @@ def main(argv):
     # 3. Start Recording (The script can send commands even if it doesn't 'own' the body)
     recording_client.start_recording()
         
-    print("RECORDING... Drive around the fiducial now.")
+    print("\nRECORDING... Drive around the fiducial now.\n")
+
+    
     time.sleep(30)
 
     # We use a loop to handle the 'NotReadyYetError'
@@ -144,6 +148,7 @@ def main(argv):
         try:
             recording_client.stop_recording()
             print("Recording stopped successfully.")
+            print("\nRecording stopped. Downloading...\n")
             break # Exit the loop if it works
         except bosdyn.client.recording.NotReadyYetError:
             print(f"Robot is still processing map (Attempt {i+1}/{max_retries}). Waiting 2s...")

@@ -12,6 +12,8 @@ The robot will navigate to a fiducial before each recording, and the map will be
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
 This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
 Minimal AI was used to aid in syntax and structure
+
+not finding frame tree
 """
 
 
@@ -81,7 +83,7 @@ current_dir = os.path.dirname(os.path.abspath(__file__))
 parent_dir = os.path.dirname(current_dir)
 sys.path.append(parent_dir)
 
-from leo_funcs import check_batt_perc, convert_map_to_ply_2,control_height,nav_to_fid,fine_align,upload_map, log_test_metrics, ensure_recording_stopped,turn_relative
+from leo_funcs import check_batt_perc,convert_map_to_ply,convert_map_to_ply_2, convert_map_to_ply_3,control_height,nav_to_fid,fine_align,upload_map, log_test_metrics, ensure_recording_stopped,turn_relative
 
 def main(argv):
     #1. setup positional arguments
@@ -231,7 +233,7 @@ def main(argv):
             #convert
             print(f"\n[N{a}]Converting to ply...\n")
             ply_name=os.path.join(full_path,f"converted_n_{a}.ply")
-            convert_map_to_ply_2(full_path,ply_name,a,to_fiducial_matrix)
+            convert_map_to_ply_3(full_path,ply_name,a,to_fiducial_matrix)
             end_time = time.time()
             end_state=state_client.get_robot_state()
             end_batt_per=end_state.battery_states[0].charge_percentage.value

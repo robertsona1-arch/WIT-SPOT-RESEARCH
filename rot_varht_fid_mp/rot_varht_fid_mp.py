@@ -14,6 +14,10 @@ This script is an updated version of rotating_map that will track the rotation o
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET HANDY TO STOP THE ROBOT IF NEEDED
 This script pulls significant portions of code from the Boston Dynamics recording_command_line.py & view_map.py 
 Minimal AI was used to aid in syntax and structure
+
+need to fix so that it doesnt turn again afterwards
+first map is aligned correct
+rest arent
 """
 
 
