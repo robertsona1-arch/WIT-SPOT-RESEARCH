@@ -1,9 +1,9 @@
 """
 master_map_record.py
 
-mac - python3 master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
+mac - python3 master_map_record.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" 
 
-windows - python master_map_record.py <USERNAME> <PASSWORD> --dir "DIRECTORY" --int <NUM> --float <FLOAT>
+windows - python master_map_record.py <USERNAME> <PASSWORD> --map_dir "DIRECTORY" 
 
 This script is used to record a new master map of the environment. 
 Start with the tablet holding the lease. Run this script, then select hijack on tablet. 
@@ -13,7 +13,7 @@ Use ctrl+c to stop the script any time, the robot will stop and sit safetly, and
 Please maintian a safe distance from the robot at all time
 THIS SCRIPT DOES NOT USE ESTOP, HAVE THE TABLET READY TO STOP THE ROBOT IF NEEDED
 
-This script pulls significant portions of code from the Boston Dynamics <blank> files and Google API <blank> files
+This script pulls significant portions of code from the Boston Dynamics spot SDK files 
 
 Minimail AI was used in syntax and structure
 """
