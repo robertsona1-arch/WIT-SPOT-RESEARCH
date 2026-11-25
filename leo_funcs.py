@@ -622,6 +622,53 @@ def upload_map(graph_nav_client, map_dir):
 
     print("Map upload complete.")
 
+def upload_map_a(graph_nav_client, map_dir):
+    # 1. Load and Upload the Graph synchronously (The Skeleton must exist on Spot first)
+    graph_path = os.path.join(map_dir, "graph")
+    if not os.path.exists(graph_path):
+        print(f"Error: Graph file not found at {graph_path}")
+        return False
+
+    with open(graph_path, "rb") as f:
+        graph_data = f.read()
+    graph = map_pb2.Graph()
+    graph.ParseFromString(graph_data)
+    
+    print("Uploading graph...")
+    graph_nav_client.upload_graph(graph=graph)
+
+    # 2. Dispatch Waypoint Snapshots asynchronously (The Muscle)
+    snapshot_dir = os.path.join(map_dir, "waypoint_snapshots")
+    # Deduplicate snapshot IDs so identical snapshots aren't uploaded twice
+    waypoint_ids = list(set(wp.snapshot_id for wp in graph.waypoints if wp.snapshot_id))
+
+    snapshot_futures = []
+    for snapshot_id in waypoint_ids:
+        snapshot_path = os.path.join(snapshot_dir, snapshot_id)
+        if os.path.exists(snapshot_path):
+            with open(snapshot_path, "rb") as f:
+                snapshot_data = f.read()
+            
+            snapshot = map_pb2.WaypointSnapshot()
+            snapshot.ParseFromString(snapshot_data)
+            
+            print(f"Queuing async upload for snapshot: {snapshot_id[:8]}...")
+            future = graph_nav_client.upload_waypoint_snapshot_async(snapshot)
+            snapshot_futures.append((snapshot_id, future))
+        else:
+            print(f"Warning: Snapshot file missing on disk for ID {snapshot_id[:8]}")
+
+    # 3. Wait for all concurrent gRPC uploads to finish before localizing
+    for snapshot_id, future in snapshot_futures:
+        try:
+            future.result()
+        except Exception as e:
+            print(f"Error uploading snapshot {snapshot_id[:8]}: {e}")
+            return False
+
+    print(f"Map upload complete ({len(snapshot_futures)} snapshots uploaded concurrently).")
+    return True
+
 def write_ply(filename, points):
     with open(filename, 'w') as f:
         f.write("ply\n")
