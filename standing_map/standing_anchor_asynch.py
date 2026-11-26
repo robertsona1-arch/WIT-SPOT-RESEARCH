@@ -213,12 +213,12 @@ def main(argv):
             start_state=state_future.result()
             st_batt_perc=start_state.battery_states[0].charge_percentage.value
             loco_charge=start_state.power_state.locomotion_charge_percentage.value
-            """
+            
             if loco_charge<10.0:
                 print(f"\nBattery too low. Stopping.\n")
                 clear_future.result()
                 break
-            """
+            
             clear_future.result()
             
             start_time = time.time()
